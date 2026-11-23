@@ -269,6 +269,21 @@ def _read_pages(pdf: Path) -> List[List[Dict]]:
     return pages
 
 
+def _paper_id(stem: str) -> str:
+    """文件名 → 论文 id。
+
+    非 ASCII（中文）文件名不能直接当 id（会变成空串，
+    所有中文 PDF 都会撞成同一个 `paper`）→ 走 md5 前 8 位，
+    和 shadow-ebook 的 `_sanitize_book_id` 同一个思路。
+    """
+    raw = (stem or "").strip()
+    ascii_id = re.sub(r"[^A-Za-z0-9_.-]", "", raw)[:40]
+    if ascii_id and len(ascii_id) >= 3:
+        return ascii_id
+    import hashlib
+    return "paper_" + hashlib.md5(raw.encode("utf-8")).hexdigest()[:8]
+
+
 def import_pdf(raw: bytes, filename: str, asset_dir: Path) -> dict:
     """PDF 字节 → 论文文档。"""
     with tempfile.TemporaryDirectory(prefix="pdf_") as td:
@@ -298,7 +313,7 @@ def import_pdf(raw: bytes, filename: str, asset_dir: Path) -> dict:
                 s = (d["text"] or "").strip()
                 if not s:
                     continue
-                m = _APPENDIX_RE.match(s)
+                m = None if in_toc else _APPENDIX_RE.match(s)
                 if m:
                     seq += 1
                     title = f"附录 {m.group(2)}"
@@ -324,7 +339,7 @@ def import_pdf(raw: bytes, filename: str, asset_dir: Path) -> dict:
                         continue
                 cur["blocks"].append({"k": "p", "t": s})
 
-        pid = re.sub(r"[^A-Za-z0-9_.-]", "", Path(filename).stem)[:40] or "paper"
+        pid = _paper_id(Path(filename).stem)
         doc = schema.make_doc(
             pid,
             Path(filename).stem,
