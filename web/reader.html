@@ -39,6 +39,10 @@
                 <span class="ico ico-layers" aria-hidden="true"></span>生词本
             </button>
             <span class="sp-sep" aria-hidden="true"></span>
+            <button class="theme-btn sp-toolbtn" data-action="toggleMute" id="mute-btn"
+                    aria-label="朗读开关" title="点词自动朗读">
+                <span class="ico ico-speaker" aria-hidden="true"></span>
+            </button>
             <button class="theme-btn" data-action="cycleTheme" aria-label="切换主题">
                 <span class="ico ico-moon" aria-hidden="true"></span>
             </button>
@@ -132,9 +136,35 @@
             <div class="sp-modal-body" id="dict-body"></div>
             <div class="sp-modal-actions">
                 <button class="btn btn-primary" id="dict-add" data-action="addVocab">加入生词本</button>
+                <button class="btn btn-secondary" id="dict-speak" data-action="speakWord">🔊 朗读</button>
                 <button class="btn btn-secondary" id="dict-translate" data-action="translateSentence">翻译整句</button>
             </div>
             <p class="sp-modal-hint" id="dict-hint"></p>
+        </div>
+    </div>
+
+    <!-- 公式卡片:点正文里的公式弹出来,放大看 + 看 LaTeX 源码 -->
+    <div class="sp-modal" id="formula-modal" hidden role="dialog" aria-modal="true" aria-labelledby="formula-title">
+        <div class="sp-modal-card sp-modal-card--wide" id="formula-card">
+            <div class="sp-modal-head">
+                <div>
+                    <h2 class="sp-modal-word" id="formula-title">公式</h2>
+                    <p class="sp-modal-phon" id="formula-num"></p>
+                </div>
+                <button class="sp-modal-close" data-action="closeFormula" aria-label="关闭">
+                    <span class="ico ico-close" aria-hidden="true"></span>
+                </button>
+            </div>
+            <div class="sp-modal-body">
+                <div class="sp-formula-big" id="formula-big"></div>
+                <div class="sp-eyebrow" style="margin-top:18px">LaTeX 源码</div>
+                <pre class="sp-formula-src" id="formula-src"></pre>
+            </div>
+            <div class="sp-modal-actions">
+                <button class="btn btn-secondary" id="formula-copy" data-action="copyFormula">复制源码</button>
+                <button class="btn btn-primary" data-action="closeFormula">关闭</button>
+            </div>
+            <p class="sp-modal-hint" id="formula-hint"></p>
         </div>
     </div>
 

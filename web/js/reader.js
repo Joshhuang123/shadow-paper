@@ -52,6 +52,13 @@
         els.modalHint = document.getElementById('dict-hint');
         els.btnAdd = document.getElementById('dict-add');
         els.btnTranslate = document.getElementById('dict-translate');
+        els.btnSpeak = document.getElementById('dict-speak');
+        els.muteBtn = document.getElementById('mute-btn');
+        els.formulaModal = document.getElementById('formula-modal');
+        els.formulaBig = document.getElementById('formula-big');
+        els.formulaSrc = document.getElementById('formula-src');
+        els.formulaNum = document.getElementById('formula-num');
+        els.formulaHint = document.getElementById('formula-hint');
         els.noteFab = document.getElementById('note-fab');
         els.noteForm = document.getElementById('note-form');
         els.noteQuote = document.getElementById('note-quote');
@@ -77,6 +84,7 @@
         window.addEventListener('scroll', onScroll);
         window.addEventListener('resize', onScroll);
 
+        syncMuteBtn();
         els.noteForm.addEventListener('submit', onNoteSubmit);
         els.noteText.addEventListener('keydown', function (e) {
             if (e.key === 'Escape') cancelNote();
@@ -402,10 +410,110 @@
         var sel = window.getSelection();
         if (sel && !sel.isCollapsed) return;
 
+        /* 点公式 → 开公式卡片(放大 + LaTeX 源码)。
+           放在查词前面:公式里那些字母不是词,不该拿去查义。 */
+        var mathEl = e.target && e.target.closest ? e.target.closest('.math-inline') : null;
+        if (mathEl) {
+            e.preventDefault();
+            openFormula(mathEl);
+            return;
+        }
+
         var hit = SP.wordAtPoint(e.clientX, e.clientY);
         if (!hit) return;
         e.preventDefault();
         lookup(hit);
+    }
+
+    /* ==========================================================
+       公式卡片:点公式 → 放大看 + 看 LaTeX 源码
+       ----------------------------------------------------------
+       为什么要有:论文里的公式是**信息密度最高**的部分,
+       但行内公式挤在文字中间,放大看不了、源码也看不见。
+       → 弹一张卡:上面放大渲染,下面是 LaTeX 原式(可复制)。
+       ========================================================== */
+
+    var stateFormula = { latex: '', num: '' };
+
+    function openFormula(el) {
+        var latex = el.getAttribute('data-latex') || '';
+        if (!latex) return;
+        stateFormula.latex = latex;
+        var wrap = el.closest('.sp-eq');
+        var numEl = wrap ? wrap.querySelector('.sp-eq-num') : null;
+        stateFormula.num = numEl ? (numEl.textContent || '') : '';
+        els.formulaNum.textContent = stateFormula.num;
+        els.formulaSrc.textContent = latex;
+        els.formulaHint.textContent = '';
+
+        // 放大渲染:用 KaTeX 重新渲染一遍(displayMode),失败就把原来的搬过来
+        SP.fill(els.formulaBig, []);
+        var rendered = false;
+        try {
+            if (window.katex) {
+                window.katex.render(latex, els.formulaBig, {
+                    displayMode: true, throwOnError: true, strict: 'ignore', output: 'html'
+                });
+                rendered = true;
+            }
+        } catch (e) {
+            rendered = false;
+        }
+        if (!rendered) {
+            // KaTeX 没加载 / 这条公式 KaTeX 不认 → 退回原文显示,别空着
+            els.formulaBig.appendChild(SP.el('code', { class: 'math-fallback', text: latex }));
+            els.formulaHint.textContent = '这条公式没能渲染成图（KaTeX 没加载或不认这个写法），下面是 LaTeX 原文。';
+        }
+        els.formulaModal.hidden = false;
+        els.formulaModal.setAttribute('aria-modal', 'true');
+        var close = els.formulaModal.querySelector('.sp-modal-close');
+        if (close) close.focus();
+    }
+
+    function closeFormula() {
+        els.formulaModal.hidden = true;
+    }
+
+    function copyFormula() {
+        var text = stateFormula.latex || '';
+        if (!text) return;
+        var done = function () { els.formulaHint.textContent = 'LaTeX 源码已复制。'; };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done).catch(function () {
+                els.formulaHint.textContent = '复制失败，手动选中下面的源码复制。';
+            });
+        } else {
+            els.formulaHint.textContent = '这个浏览器不让脚本复制，手动选中下面的源码复制。';
+        }
+    }
+
+    /* ==========================================================
+       朗读
+       ----------------------------------------------------------
+       「每个单词点了要能读出来」——
+       点词查义的同时把词念一遍;弹窗里也有个「🔊 朗读」可以再念一遍。
+       顶栏有开关(静音状态存 localStorage,关掉就只查义不读)。
+       ========================================================== */
+
+    function speakWord() {
+        if (!state.dictWord) return;
+        els.btnSpeak.disabled = true;
+        SP.speak(state.dictWord).then(function () {
+            els.btnSpeak.disabled = false;
+        });
+    }
+
+    function toggleMute() {
+        var muted = SP.setMuted(!SP.muted);
+        syncMuteBtn();
+        return muted;
+    }
+
+    function syncMuteBtn() {
+        if (!els.muteBtn) return;
+        els.muteBtn.classList.toggle('is-off', SP.muted);
+        els.muteBtn.setAttribute('aria-pressed', SP.muted ? 'true' : 'false');
+        els.muteBtn.title = SP.muted ? '点词朗读已关' : '点词朗读已开';
     }
 
     function lookup(hit) {
@@ -424,6 +532,10 @@
         SP.fill(els.modalBody, [
             SP.el('p', { class: 'sp-modal-msg', text: '查询中…' })
         ]);
+
+        /* 「每个单词点了要能读出来」——查义的同时把词念一遍。
+           静音开关在顶栏(SP.muted),关了就不读。 */
+        SP.speak(word);
 
         SP.getJSON('/api/dict/' + encodeURIComponent(word)).then(function (d) {
             renderDict(d);
@@ -812,14 +924,33 @@
         }).catch(function () { /* 进度存不上不该打扰用户 */ });
     }, 400);
 
+    /**
+     * 滚到某个元素。
+     *
+     * ⚠ 为什么不能无脑用 window.scrollTo({behavior:'smooth'})：
+     *   base.css 里有 `html { scroll-behavior: smooth }`（从英语版继承来的），
+     *   论文正文把页面撑到 **9 万多像素**，Chrome 对这种超高页面的
+     *   **CSS 平滑滚动会卡住不动** ——
+     *   实测：目标 21916px，scrollY 一直停在 0（同一目标用 behavior:'instant' 一次就到）。
+     *   → 而且就算能滚，平滑滚过两万像素要好几秒，读者会晕。
+     *   → 策略：距离超过一屏半就用**瞬时跳转**，近处才用平滑。
+     *   → 配合 paper.css 里把 `html{scroll-behavior}` 改回 auto，双保险。
+     */
+    function jumpTo(el, offset) {
+        if (!el) return;
+        var off = offset == null ? 80 : offset;
+        var top = Math.max(0, el.getBoundingClientRect().top + window.scrollY - off);
+        var far = Math.abs(top - window.scrollY) > window.innerHeight * 1.5;
+        window.scrollTo({ top: top, behavior: far ? 'instant' : 'smooth' });
+    }
+
     function gotoSection(sid) {
         var sec = null;
         for (var i = 0; i < state.sections.length; i++) {
             if (state.sections[i].id === sid) { sec = state.sections[i]; break; }
         }
         if (!sec) return;
-        var top = sec.el.getBoundingClientRect().top + window.scrollY - 80;
-        window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+        jumpTo(sec.el);
     }
 
     /** 打开时跳回上次读到的地方。 */
@@ -838,10 +969,12 @@
             if (!sec) { state.restoring = false; return; }
 
             var target = sec.blocks[Math.min(p.block_idx || 0, sec.blocks.length - 1)] || sec.el;
-            var top = target.getBoundingClientRect().top + window.scrollY - 80;
 
             setTimeout(function () {
-                window.scrollTo({ top: Math.max(0, top), behavior: 'auto' });
+                /* ⚠ behavior:'auto' 是「跟随 CSS」而不是「瞬时」——
+                   CSS 里 html{scroll-behavior:smooth} 时它会变成平滑滚动，
+                   超高页面上就可能卡住不动。统一走 jumpTo。 */
+                jumpTo(target);
                 state.lastSaved = p.section_id + ':' + (p.block_idx || 0);
                 state.restoring = false;
                 onScroll();
@@ -893,6 +1026,11 @@
      */
     function onKeydown(e) {
         if (e.key !== 'Escape') return;
+        if (!els.formulaModal.hidden) {
+            e.preventDefault();
+            closeFormula();
+            return;
+        }
         if (!els.modal.hidden) {
             e.preventDefault();
             closeDict();
@@ -914,6 +1052,11 @@
     window.closeDict = closeDict;
     window.addVocab = addVocab;
     window.translateSentence = translateSentence;
+    window.speakWord = speakWord;
+    window.toggleMute = toggleMute;
+    window.openFormula = openFormula;
+    window.closeFormula = closeFormula;
+    window.copyFormula = copyFormula;
     window.startNote = startNote;
     window.cancelNote = cancelNote;
 

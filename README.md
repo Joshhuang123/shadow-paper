@@ -163,6 +163,38 @@ python3 -m pytest tests/ -q      # 51 个，全部离线，不打网
 
 ---
 
+## 能干什么
+
+| 功能 | 怎么用 | 实现 |
+|---|---|---|
+| **点词查义** | 点正文里任意英文单词 | `/api/dict/<word>`（有道 + datamuse，SQLite 缓存 30 天） |
+| **点词朗读** | 点词的同时**自动念出来**；弹窗里也有「🔊 朗读」再念一遍 | 服务端 `macOS say` 合成 → m4a；顶栏有静音开关 |
+| **整句翻译** | 查义弹窗里「翻译整句」 | 服务端 `/api/translate`（MyMemory，带 30 天缓存） |
+| **公式可视化** | 点正文里任意公式 → 弹卡片：**放大渲染 + LaTeX 源码（可复制）** | KaTeX 重新渲染一遍（displayMode） |
+| 生词本 + 复习 | 查义时「加入生词本」，右侧面板按艾宾浩斯曲线复习 | 服务端 SRS（0/2/5/14 天） |
+| 笔记 | 选中正文文字 → 「记笔记」 | `paper_notes` 表 |
+| 阅读进度 | 自动记，回到上次读到的位置 | `reading_progress` 表 |
+| 目录跳转 | 左侧 90 个小节，点了直接跳 | 见下面的坑 |
+| 离线 / 装桌面 | PWA，可添加到主屏幕 | service-worker + manifest |
+
+### 朗读为什么用 macOS 自带的 `say`
+
+`edge-tts`（微软 Edge 的免费 TTS）要连 `wss://speech.platform.bing.com`，
+实测这台机器 **403**（WSServerHandshakeError）。macOS 自带的 `say` **完全离线、秒回**，
+Samantha / Alex 这些音色读单词足够了。
+
+`say` 只出 AIFF，**Chrome 播不了**，所以服务端再转一道 m4a（`afconvert`），
+浏览器通吃，体积还小一个数量级（8.9KB vs 46KB）。
+
+### 翻译为什么挪到服务端
+
+前端原来直连 MyMemory，URL 写的是 `/api/v1/get` —— **那个路径是 404**，
+所以「翻译整句」按钮一直没反应（正确路径没有 `/api/v1/`）。
+现在改成调服务端 `/api/translate`：能缓存、能给出明确的中文错误提示，
+前端直连只留作兜底。
+
+---
+
 ## 已知限制
 
 | 限制 | 说明 |
@@ -190,6 +222,7 @@ python3 -m pytest tests/ -q      # 51 个，全部离线，不打网
 
 | 现象 | 根因 | 修法 |
 |---|---|---|
+| **点目录没反应（时好时坏）** | `base.css` 里 `html{scroll-behavior:smooth}`（英语版继承来的）；论文正文把页面撑到 **9 万像素**，Chrome 对这种超高页面的 CSS 平滑滚动**会卡住不动**（实测目标 21916px，scrollY 一直是 0；同一个目标用 `behavior:'instant'` 一次就到） | paper.css 里把 `html{scroll-behavior}` 改回 auto；`reader.js` 的 `jumpTo()` 按距离选：超过一屏半用 instant，近处才 smooth |
 | pandoc 报 `unexpected end of input` | 遇到不认识的宏会一路吃到文件尾 | 抽取并就地展开自定义宏；再迭代收敛剩下的 |
 | pandoc 报 `unexpected %` | `\label[appendix]{x}` 这类带可选参数的调用 | 剥掉可选参数 |
 | 表全变成空行 | pandoc 的 Table 是 **6 段**结构（`[attr, caption, colspecs, head, bodies, foot]`），按 2 段读了 | 按 6 段读 |
@@ -199,6 +232,8 @@ python3 -m pytest tests/ -q      # 51 个，全部离线，不打网
 | `File ref.bib not found` | pandoc 按 cwd 找 .bib | 用绝对路径 + cwd 设为源码目录 |
 | 公式全是原文 | 后台页签 rAF 停摆 | 分批调度改 setTimeout |
 | 切句把公式切碎 | 占位符里的 LaTeX 有小数点 | 占位符用**独立哨兵字符**（不能和切句的 `.` 保护共用） |
+| 「翻译整句」点了没反应 | 前端直连的 MyMemory 路径写错（多了 `/api/v1/` → 404） | 改走服务端 `/api/translate` |
+| 播放没有声音 | edge-tts 403（微软端点不通） | 改用 macOS 自带 `say`，并转成 m4a 给 Chrome 播 |
 
 ---
 

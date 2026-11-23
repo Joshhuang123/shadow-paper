@@ -35,9 +35,11 @@ def create_app() -> Flask:
 
     db.init_db()
 
-    from extensions import dictionary, papers
+    from extensions import dictionary, papers, translate, tts
     dictionary.register_routes(app)
     papers.register_routes(app)
+    translate.register_routes(app)
+    tts.register_routes(app)
 
     # ── 页面 ────────────────────────────────────────────────
     @app.route("/")

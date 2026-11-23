@@ -601,28 +601,89 @@
     };
 
     /**
-     * 整句翻译(MyMemory 直连)。
-     * 后端没有翻译端点,只能前端直连。失败**静默**返回 null:
-     * 翻译是锦上添花,不能因为它挂了就打断查词。
+     * 整句翻译（走服务端 /api/translate）。
+     *
+     * ⚠ 原来这里是**前端直连** MyMemory，URL 写的是 `/api/v1/get` ——
+     *   **那个路径是 404**（实测带 /api/v1/ 返回空），所以「翻译整句」按钮一直没反应。
+     *   正确路径没有 /api/v1/。现在改成调服务端：服务端能缓存、能给出明确的中文错误提示，
+     *   前端直连只留作兜底（服务端挂了、而浏览器能直连的情况）。
      */
     SP.translate = function (text, langpair) {
         if (!text) return Promise.resolve(null);
-        var url = 'https://api.mymemory.translated.net/api/v1/get?q='
-            + encodeURIComponent(text)
-            + '&langpair=' + encodeURIComponent(langpair || 'en|zh-CN');
-        var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 8000) : null;
-        return fetch(url, ctrl ? { signal: ctrl.signal } : undefined)
-            .then(function (r) { return r.json(); })
+        var pair = langpair || 'en|zh-CN';
+        var to = pair.split('|')[1] || 'zh-CN';
+        return SP.getJSON('/api/translate?q=' + encodeURIComponent(text) + '&to=' + encodeURIComponent(to))
+            .then(function (d) { return (d && d.translated) || null; })
+            .catch(function () {
+                // 兜底：浏览器直连（正确的路径）
+                var url = 'https://api.mymemory.translated.net/get?q='
+                    + encodeURIComponent(text)
+                    + '&langpair=' + encodeURIComponent(pair);
+                var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+                var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 8000) : null;
+                return fetch(url, ctrl ? { signal: ctrl.signal } : undefined)
+                    .then(function (r) { return r.json(); })
+                    .then(function (d) {
+                        if (timer) clearTimeout(timer);
+                        var t = d && d.responseData && d.responseData.translatedText;
+                        return t || null;
+                    })
+                    .catch(function () {
+                        if (timer) clearTimeout(timer);
+                        return null;
+                    });
+            });
+    };
+
+    /**
+     * 朗读一段文本（单词 / 句子）。
+     *
+     * 优先走**服务端 TTS**（macOS say 合成，离线可用、音质稳）；
+     * 服务端失败就退回浏览器自带的 speechSynthesis。
+     *
+     * 为什么服务端优先：
+     *   edge-tts 要连微软的 websocket 端点，实测这台机器 403；
+     *   macOS 自带的 say 完全离线、秒回，音色够用。
+     *
+     * 静音开关：SP.muted（由页面的喇叭按钮控制，存 localStorage）。
+     */
+    SP.muted = false;
+    try {
+        SP.muted = localStorage.getItem('spMuted') === '1';
+    } catch (e) { /* 隐私模式下读不到,忽略 */ }
+
+    SP.speak = function (text, opts) {
+        opts = opts || {};
+        if (!text) return Promise.resolve(false);
+        if (!opts.force && SP.muted) return Promise.resolve(false);
+        return SP.postJSON('/api/tts', { text: text })
             .then(function (d) {
-                if (timer) clearTimeout(timer);
-                var t = d && d.responseData && d.responseData.translatedText;
-                return t || null;
+                if (!d || !d.audio_url) throw new Error('no audio');
+                var a = new Audio(d.audio_url);
+                a.play();
+                return true;
             })
             .catch(function () {
-                if (timer) clearTimeout(timer);
-                return null;
+                // 退回浏览器自带语音
+                try {
+                    if (!window.speechSynthesis) return false;
+                    window.speechSynthesis.cancel();
+                    var u = new SpeechSynthesisUtterance(text);
+                    u.lang = opts.lang || 'en-US';
+                    u.rate = opts.rate || 0.92;
+                    window.speechSynthesis.speak(u);
+                    return true;
+                } catch (e) { return false; }
             });
+    };
+
+    SP.setMuted = function (m) {
+        SP.muted = !!m;
+        try { localStorage.setItem('spMuted', SP.muted ? '1' : '0'); } catch (e) { /* 忽略 */ }
+        if (SP.muted && window.speechSynthesis) {
+            try { window.speechSynthesis.cancel(); } catch (e) { /* 忽略 */ }
+        }
+        return SP.muted;
     };
 
     /* ==========================================================

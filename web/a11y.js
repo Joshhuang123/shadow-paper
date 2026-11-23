@@ -5,9 +5,10 @@
   - 焦点陷阱 (Tab 循环在 modal 内)
 */
 (function(){
+  /* 论文版只有这两个弹窗（英语版那六个是原项目的，这里用不上）。
+     可见性判据：hidden 属性会让 offsetParent 变 null，正好能认出来。 */
   const MODAL_IDS = [
-    'word-modal', 'ar-modal', 'review-modal', 'comp-modal',
-    'grammar-modal', 'practice-modal'
+    'dict-modal', 'formula-modal'
   ];
 
   function getVisibleModal(){
