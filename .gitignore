@@ -1,11 +1,5 @@
 __pycache__/
 *.pyc
 .venv/
-data/shadow-paper.db
-data/shadow-paper.db-wal
-data/shadow-paper.db-shm
-data/.secret
-data/assets/
-data/papers/
-data/unwrap_cache.json
+data/
 .DS_Store

@@ -37,14 +37,53 @@ _HEADING_RE = re.compile(
 )
 _APPENDIX_RE = re.compile(r"^\s*(Appendix|附录)\s+([A-Z])\b", re.I)
 
+# ── 中文标题 ────────────────────────────────────────────────
+# 中文论文的小节标题常见三种写法：
+#   ① 第 X 章 / 第 X 节 + 标题        「第三章 模型」「第 2 节 均衡」
+#   ② 中文数字 + 顿号 + 标题          「一、三句话结论」「二、论文对我们路线图的三个具体修正」
+#   ③ 阿拉伯数字 + 空格 + 中文标题     「1 引言」「4 均衡与效率」
+_CN_CHAPTER_RE = re.compile(r"^\s*第\s*([一二三四五六七八九十百千\d]+)\s*[章节節]\s*(.{1,40}?)\s*$")
+_CN_NUM_RE = re.compile(r"^\s*([一二三四五六七八九十]+)\s*[、.．]\s*(.{1,40}?)\s*$")
+_CN_ARABIC_RE = re.compile(r"^\s*(\d+(?:\.\d+)*)\s*[、.．]?\s+([一-鿿][^\d]{1,40}?)\s*$")
+# 目录条目：「1 引言 7」「2.3 均衡 12」—— 结尾那个裸数字是页码，不是标题的一部分
+_CN_TOC_LINE_RE = re.compile(r"^\s*\d+(?:\.\d+)*\s+.+?\s+\d{1,4}\s*$")
+# 中文数字开头的目录条目：「一、三句话结论 48」
+_CN_TOC_LINE_CN_RE = re.compile(r"^\s*[一二三四五六七八九十]+\s*[、.．]\s+.+?\s+\d{1,4}\s*$")
+# 目录页的标记行
+_TOC_MARKER_RE = re.compile(r"^\s*(目\s*录|目录|Table\s*of\s*Contents|Contents)\s*$", re.I)
+
 # 标题的正文部分必须**像散文**：只允许字母数字和常见标点，不许出现数学符号。
 _TITLE_PROSE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9 ,'\-–—&()/:]{2,68}$")
+# 中文标题：2–40 个字，以中文/数字开头，不以句末标点收尾
+_CN_TITLE_RE = re.compile(r"^[一-鿿\d][一-鿿\d A-Za-z0-9，、：:（）()·\-—""''《》%]{1,40}$")
+_CN_STOP = "。！？；：，、,.;:!?"
+
+
+def _looks_like_cn_title(t: str) -> bool:
+    """中文标题判定：像标题、且不是句子/图注。"""
+    t = (t or "").strip()
+    if not t or len(t) < 2 or len(t) > 40:
+        return False
+    if not _CN_TITLE_RE.match(t):
+        return False
+    # 句末标点收尾 → 是句子不是标题
+    if t[-1] in _CN_STOP:
+        return False
+    # 夹着数字的（图注常常有 "表 3"）→ 不算标题
+    if re.search(r"[（(]\s*\d+\s*[）)]", t):
+        return False
+    return True
 
 
 def _looks_like_title(t: str) -> bool:
     """判断一段文字像不像**章节标题**（而不是公式碎片或乱码）。"""
     t = (t or "").strip()
-    if not t or not _TITLE_PROSE_RE.match(t):
+    if not t:
+        return False
+    # 中文标题走另一套判定
+    if re.search(r"[一-鿿]", t):
+        return _looks_like_cn_title(t)
+    if not _TITLE_PROSE_RE.match(t):
         return False
     words = re.findall(r"[A-Za-z][A-Za-z\-']{2,}", t)
     if not words:
@@ -76,6 +115,61 @@ def _plausible_number(num: str) -> bool:
         if not p.isdigit() or int(p) >= 100:
             return False
     return True
+
+
+_CN_DIGITS = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7,
+              "八": 8, "九": 9, "十": 10}
+
+
+def _cn_number_level(num: str) -> int:
+    """中文数字编号 → 层级。「一、」是一级（=第 X 章），「（一）」是二级。"""
+    if not num:
+        return 1
+    if num in _CN_DIGITS:
+        return 1
+    if num.startswith("十"):          # 十一、十二…
+        return 1
+    return 1
+
+
+def _heading_of(text: str):
+    """一行文字 → (编号, 标题, 层级) 或 None。
+
+    中英文都给。中文要额外排掉**目录条目**（结尾带页码的那种）。
+    """
+    s = (text or "").strip()
+    if not s or len(s) > 80:
+        return None
+
+    # 目录条目：「1 引言 7」—— 结尾的裸数字是页码
+    if _CN_TOC_LINE_RE.match(s) or _CN_TOC_LINE_CN_RE.match(s):
+        return None
+
+    # ① 第 X 章/节
+    m = _CN_CHAPTER_RE.match(s)
+    if m:
+        title = m.group(2)
+        if _looks_like_cn_title(title):
+            return (m.group(1), title, 1)
+
+    # ② 一、二、…
+    m = _CN_NUM_RE.match(s)
+    if m:
+        title = m.group(2)
+        if _looks_like_cn_title(title):
+            return (m.group(1), title, _cn_number_level(m.group(1)))
+
+    # ③ 1 引言
+    m = _CN_ARABIC_RE.match(s)
+    if m and _looks_like_cn_title(m.group(2)):
+        return (m.group(1), m.group(2), m.group(1).count(".") + 1)
+
+    # 英文：1 Introduction / A.1 Title
+    m = _HEADING_RE.match(s)
+    if m:
+        return (m.group(1), m.group(2).strip(), m.group(1).count(".") + 1)
+
+    return None
 
 
 class ImportError_(Exception):
@@ -191,9 +285,15 @@ def import_pdf(raw: bytes, filename: str, asset_dir: Path) -> dict:
         toc.append({"id": "s1", "title": "正文", "level": 1})
         seq = 1
 
-        for lines in pages:
+        for pi, lines in enumerate(pages):
             bsize = Counter(round(d["size"], 1) for d in lines if d["size"]).most_common(1)
             bsize = bsize[0][0] if bsize else 0.0
+            # 目录页：整页都不认标题（目录里的条目长得跟正文标题一模一样，
+            # 认了会生成一堆空章节）。标记行所在页 + 紧接着的一页都算目录。
+            in_toc = any(_TOC_MARKER_RE.match((d["text"] or "").strip()) for d in lines)
+            if not in_toc and pi > 0:
+                prev = pages[pi - 1]
+                in_toc = any(_TOC_MARKER_RE.match((d["text"] or "").strip()) for d in prev)
             for d in lines:
                 s = (d["text"] or "").strip()
                 if not s:
@@ -206,16 +306,17 @@ def import_pdf(raw: bytes, filename: str, asset_dir: Path) -> dict:
                     sections.append(cur)
                     toc.append({"id": cur["id"], "title": title, "level": 1})
                     continue
-                hm = _HEADING_RE.match(s)
+                hm = None if in_toc else _heading_of(s)
                 if hm and len(s) < 80:
-                    num, title = hm.group(1), hm.group(2).strip()
-                    # ① 标题部分像散文（挡掉 "N 1 2 ≈"、"ASI" 这类公式碎片）
+                    num, title, level = hm
+                    # ① 标题部分像标题（挡掉 "N 1 2 ≈"、"ASI" 这类公式碎片）
                     # ② 字号不小于正文（这篇论文标题与正文同号，所以这条只是兜底，
                     #    真正起作用的是 ①）
                     big_enough = (not bsize) or d["size"] >= bsize - 0.8
-                    if (_looks_like_title(title) and big_enough
-                            and _plausible_number(num)):
-                        level = num.count(".") + 1
+                    ok_num = True
+                    if re.fullmatch(r"[\d.]+", num or ""):
+                        ok_num = _plausible_number(num)
+                    if _looks_like_title(title) and big_enough and ok_num:
                         seq += 1
                         cur = schema.make_section(f"s{seq}", f"{num} {title}", min(level, 6))
                         sections.append(cur)

@@ -628,7 +628,12 @@
         if (!state.dictSentence) return;
         els.btnTranslate.disabled = true;
         els.btnTranslate.textContent = '翻译中…';
-        SP.translate(state.dictSentence, 'en|zh-CN').then(function (t) {
+        /* 翻译方向按句子里的汉字自动判：
+           中文论文 → 中译英；英文论文 → 英译中。
+           （方向写死的话，拿它读中文论文时会把中文翻成中文。） */
+        var hasCJK = /[一-鿿]/.test(state.dictSentence);
+        var pair = hasCJK ? 'zh-CN|en' : 'en|zh-CN';
+        SP.translate(state.dictSentence, pair).then(function (t) {
             els.btnTranslate.disabled = false;
             els.btnTranslate.textContent = '翻译整句';
             if (!t) {
@@ -636,7 +641,7 @@
                 return;
             }
             var box = SP.el('div', { class: 'sp-translation' });
-            box.appendChild(SP.el('div', { class: 'sp-eyebrow', text: '整句翻译' }));
+            box.appendChild(SP.el('div', { class: 'sp-eyebrow', text: '整句翻译 · ' + (hasCJK ? '中→英' : '英→中') }));
             box.appendChild(SP.el('p', { style: 'margin:6px 0 0', text: t }));
             els.modalBody.appendChild(box);
         });
