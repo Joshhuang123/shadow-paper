@@ -61,7 +61,12 @@
         <main class="sp-main">
             <article class="sp-paper" id="paper-body">
                 <div class="sp-math-note" id="math-note" hidden></div>
-                <p class="text-secondary">正在载入论文…</p>
+                <!-- 题名区和小节都塞进这个容器:
+                     两者都往 #paper-body 里插的话,后插的会跑到先插的前面,
+                     题名区就被挤到正文末尾去了。 -->
+                <div id="paper-content">
+                    <p class="text-secondary">正在载入论文…</p>
+                </div>
             </article>
         </main>
 

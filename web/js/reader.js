@@ -24,6 +24,7 @@
         paperReady: false,     // 正文已渲染(公式占位已就位)
         katexReady: false,     // KaTeX 已加载
         mathRendered: false,   // 公式已渲染过(只跑一次)
+        progressRestored: false,
         dictWord: '',
         dictSentence: '',
         pendingNote: null      // 待保存的笔记 {text, section_id, block_idx}
@@ -37,6 +38,7 @@
 
     function init() {
         els.article = document.getElementById('paper-body');
+        els.content = document.getElementById('paper-content');
         els.title = document.getElementById('paper-title');
         els.authors = document.getElementById('paper-authors');
         els.tocList = document.getElementById('toc-list');
@@ -93,6 +95,7 @@
         SP.loadKatex(function (ok) {
             if (!ok) {
                 showMathNote('没能加载 KaTeX(离线或 CDN 不通),公式暂时显示为 LaTeX 原文。');
+                restoreProgress();
                 return;
             }
             state.katexReady = true;
@@ -114,6 +117,10 @@
             }
             // 公式渲染完高度会变,重新定位一次阅读位置
             onScroll();
+            // 必须在公式渲染完之后再跳回上次读的位置:
+            // 公式从一行 LaTeX 变成渲染后的高度差得不少,
+            // 先跳再渲染的话,落点会偏几千像素。
+            restoreProgress();
         });
     }
 
@@ -123,7 +130,8 @@
     }
 
     function renderFatal(msg) {
-        SP.fill(els.article, [
+        // 只清正文容器:整个 article 里还有公式提示条
+        SP.fill(els.content || els.article, [
             SP.el('p', { class: 'text-secondary', text: msg })
         ]);
     }
@@ -140,7 +148,6 @@
             renderBody(d.paper);
             state.paperReady = true;
             maybeRenderMath();
-            restoreProgress();
         }).catch(function (err) {
             renderFatal('打开失败:' + (err.message || '未知错误'));
         });
@@ -176,7 +183,9 @@
             front.appendChild(abs);
         }
 
-        els.article.insertBefore(front, els.mathNote.nextSibling);
+        // 清掉「正在载入论文…」占位,题名区放最前面
+        SP.fill(els.content, []);
+        els.content.appendChild(front);
     }
 
     /** 目录:按 level 缩进,点击平滑滚动。 */
@@ -234,7 +243,8 @@
             });
         });
 
-        els.article.insertBefore(frag, els.mathNote.nextSibling);
+        // 追加在题名区之后
+        els.content.appendChild(frag);
     }
 
     /* ==========================================================
@@ -814,6 +824,9 @@
 
     /** 打开时跳回上次读到的地方。 */
     function restoreProgress() {
+        if (state.progressRestored) return;
+        state.progressRestored = true;
+
         SP.getJSON('/api/paper/' + encodeURIComponent(state.pid) + '/progress').then(function (d) {
             var p = d.progress;
             if (!p || !p.section_id) { state.restoring = false; return; }
@@ -827,13 +840,12 @@
             var target = sec.blocks[Math.min(p.block_idx || 0, sec.blocks.length - 1)] || sec.el;
             var top = target.getBoundingClientRect().top + window.scrollY - 80;
 
-            // 等公式渲染完再定位,否则高度会变、位置会偏
             setTimeout(function () {
                 window.scrollTo({ top: Math.max(0, top), behavior: 'auto' });
                 state.lastSaved = p.section_id + ':' + (p.block_idx || 0);
                 state.restoring = false;
                 onScroll();
-            }, 400);
+            }, 80);
         }).catch(function () {
             state.restoring = false;
         });
