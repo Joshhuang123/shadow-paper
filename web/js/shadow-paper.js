@@ -363,9 +363,13 @@
         var i = 0, ok = 0;
         var undef = {};
         var CHUNK = 60;
-        var raf = window.requestAnimationFrame
-            ? function (fn) { window.requestAnimationFrame(fn); }
-            : function (fn) { setTimeout(fn, 0); };
+        /* ⚠ 用 setTimeout 而不是 requestAnimationFrame：
+             **后台标签页里 rAF 会被暂停**（Chrome 只跑 1fps 甚至完全停），
+             分批渲染就永远停在第一批 —— 页面看着「公式全是 LaTeX 原文」，
+             而其实 KaTeX 早就加载好了。
+             （2026-11-23 踩过：运营 Chrome 在后台，rAF 全停，1700 多个公式一个没渲染。）
+             setTimeout 在后台只被限到 1s 一次，不会停 —— 照样能跑完。 */
+        var raf = function (fn) { setTimeout(fn, 0); };
 
         function step() {
             var end = Math.min(i + CHUNK, spans.length);
@@ -701,10 +705,35 @@
         return (Number(n) || 0).toLocaleString('zh-CN');
     };
 
-    /** "2026-11-23T18:30:00" → "2026-11-23" */
+    /**
+     * 时间格式化。后端有两种时间表示,两种都要认:
+     *   · papers.imported_at  是 ISO 字符串("2026-11-23T18:30:00")
+     *   · notes.created_at / vocab.added_ts 是毫秒时间戳(整数)
+     * 只按字符串处理的话,笔记时间会显示成 "1795430772"。
+     */
+    function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+
     SP.fmtDate = function (s) {
-        if (!s) return '';
+        if (s == null || s === '') return '';
+        if (typeof s === 'number' || /^\d+$/.test(String(s))) {
+            var d = new Date(Number(s));
+            if (isNaN(d.getTime())) return '';
+            return d.getFullYear() + '.' + pad2(d.getMonth() + 1) + '.' + pad2(d.getDate());
+        }
         return String(s).slice(0, 10).replace(/-/g, '.');
+    };
+
+    /** 带时分:笔记列表用,光有日期分不清先后。 */
+    SP.fmtDateTime = function (s) {
+        if (s == null || s === '') return '';
+        if (typeof s === 'number' || /^\d+$/.test(String(s))) {
+            var d = new Date(Number(s));
+            if (isNaN(d.getTime())) return '';
+            return d.getFullYear() + '.' + pad2(d.getMonth() + 1) + '.' + pad2(d.getDate())
+                + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+        }
+        var t = String(s).replace('T', ' ');
+        return t.slice(0, 16).replace(/-/g, '.');
     };
 
     /** 时间戳(ms) → "3 天后" / "今天到期" */

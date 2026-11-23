@@ -174,6 +174,32 @@ python3 -m pytest tests/ -q      # 51 个，全部离线，不打网
 | 参考文献 | arXiv 路径需要 `--citeproc`，正文里的 `\citep` 已统一成 `\cite`；实测这篇 105 条 |
 | 查词打公网 | 有道/datamuse 的可达性依赖网络；断了会返回 503 而不是假装「没这个词」 |
 
+### ⚠️ 一个必须记住的坑：**后台标签页里 rAF 会被暂停**
+
+症状：页面看起来「公式全是 LaTeX 原文」，但 KaTeX 明明已经加载好了（`katex-ready` 类也在）。
+
+根因：前端把公式渲染**分批**做（每帧 60 个，免得主线程卡住），
+而**后台标签页的 `requestAnimationFrame` 会被 Chrome 暂停** → 分批渲染永远停在第一批。
+
+→ 分批调度**必须用 `setTimeout`**，不能用 rAF（后台只被限到 1s 一次，不会停）。
+这个坑今天在两个项目里各踩一次（视频平台的 Vue 弹窗不渲染，也是同一个根因）。
+
+---
+
+## 踩坑记录（2026-11-23 建这个项目时）
+
+| 现象 | 根因 | 修法 |
+|---|---|---|
+| pandoc 报 `unexpected end of input` | 遇到不认识的宏会一路吃到文件尾 | 抽取并就地展开自定义宏；再迭代收敛剩下的 |
+| pandoc 报 `unexpected %` | `\label[appendix]{x}` 这类带可选参数的调用 | 剥掉可选参数 |
+| 表全变成空行 | pandoc 的 Table 是 **6 段**结构（`[attr, caption, colspecs, head, bodies, foot]`），按 2 段读了 | 按 6 段读 |
+| 图全丢了 | Figure 的 target 是**inline 节点列表**（Plain→Image），不是 `[url, title]` | 递归挖出 Image 的 url |
+| Div 里的正文全没了 | pandoc 的 Div 是 `[attr, blocks]`（**2 段**），按 3 段读了 | 按 2 段读 |
+| 参考文献 0 条 | `--citeproc` 没加；refs 是 csl-entry 的 Div 套 Div 套 Para | 加 `--citeproc` + 递归取文本 |
+| `File ref.bib not found` | pandoc 按 cwd 找 .bib | 用绝对路径 + cwd 设为源码目录 |
+| 公式全是原文 | 后台页签 rAF 停摆 | 分批调度改 setTimeout |
+| 切句把公式切碎 | 占位符里的 LaTeX 有小数点 | 占位符用**独立哨兵字符**（不能和切句的 `.` 保护共用） |
+
 ---
 
 ## 和 shadow-ebook 的关系

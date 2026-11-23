@@ -21,6 +21,9 @@
         activeToc: null,
         lastSaved: '',         // 上次存进后端的进度,避免重复 POST
         restoring: true,       // 恢复进度期间不写进度(否则会把顶部位置存回去)
+        paperReady: false,     // 正文已渲染(公式占位已就位)
+        katexReady: false,     // KaTeX 已加载
+        mathRendered: false,   // 公式已渲染过(只跑一次)
         dictWord: '',
         dictSentence: '',
         pendingNote: null      // 待保存的笔记 {text, section_id, block_idx}
@@ -81,23 +84,36 @@
         loadVocab();
         loadNotes();
 
-        // KaTeX 动态加载:正文先用公式原文占位,KaTeX 到位后原地升级
+        // KaTeX 动态加载:正文先用公式原文占位,KaTeX 到位后原地升级。
+        //
+        // 这里有个竞态必须处理:论文是异步拉的,KaTeX 也是异步加载的,
+        // 谁先到是不确定的。如果 KaTeX 先到、正文还是空的,
+        // renderMathInAsync 扫不到任何公式就结束了 —— 之后正文渲染出来,
+        // 公式就永远停在 <code> 原文。所以两个条件都满足才渲染。
         SP.loadKatex(function (ok) {
             if (!ok) {
                 showMathNote('没能加载 KaTeX(离线或 CDN 不通),公式暂时显示为 LaTeX 原文。');
                 return;
             }
-            SP.renderMathInAsync(els.article, function (n, undef) {
-                // 后端只展开了 \newcommand 形式的自定义宏,
-                // 剩下的(比如 \Y \F \M)在公式里按字面显示 —— 说清楚,别让读者以为是原文如此。
-                if (undef && undef.length) {
-                    showMathNote('文中有 ' + undef.length + ' 个自定义宏('
-                        + undef.map(function (u) { return '\\' + u; }).join(' ')
-                        + ')没被后端展开,公式里按字面显示了。');
-                }
-                // 公式渲染完高度会变,重新定位一次阅读位置
-                onScroll();
-            });
+            state.katexReady = true;
+            maybeRenderMath();
+        });
+    }
+
+    /** 正文和 KaTeX 都到位了 → 渲染公式。只跑一次。 */
+    function maybeRenderMath() {
+        if (!state.paperReady || !state.katexReady || state.mathRendered) return;
+        state.mathRendered = true;
+        SP.renderMathInAsync(els.article, function (n, undef) {
+            // 后端只展开了 \newcommand 形式的自定义宏,
+            // 剩下的(比如 \Y \F \M)在公式里按字面显示 —— 说清楚,别让读者以为是原文如此。
+            if (undef && undef.length) {
+                showMathNote('文中有 ' + undef.length + ' 个自定义宏('
+                    + undef.map(function (u) { return '\\' + u; }).join(' ')
+                    + ')没被后端展开,公式里按字面显示了。');
+            }
+            // 公式渲染完高度会变,重新定位一次阅读位置
+            onScroll();
         });
     }
 
@@ -122,6 +138,8 @@
             renderHead(d.paper);
             renderToc(d.paper);
             renderBody(d.paper);
+            state.paperReady = true;
+            maybeRenderMath();
             restoreProgress();
         }).catch(function (err) {
             renderFatal('打开失败:' + (err.message || '未知错误'));
@@ -648,7 +666,7 @@
                 li.appendChild(anchor);
             }
             li.appendChild(SP.el('p', { class: 'sp-note-text', text: n.text }));
-            li.appendChild(SP.el('p', { class: 'sp-note-time', text: SP.fmtDate(n.created_at) }));
+            li.appendChild(SP.el('p', { class: 'sp-note-time', text: SP.fmtDateTime(n.created_at) }));
             els.noteList.appendChild(li);
         });
     }

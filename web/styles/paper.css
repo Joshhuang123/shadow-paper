@@ -379,6 +379,9 @@ body .top-nav .nav-links {
 .sp-reader-head {
     flex: 1 1 auto;
     min-width: 0;
+    /* components.css 里 `header { text-align: center }` 会把标题也居中。
+       论文阅读器的标题要跟正文第一行左对齐,视线不用跳。 */
+    text-align: left;
     /* 标题在中间栏左边对齐,和正文的第一行起点对齐 —— 视线不用跳 */
     margin-left: var(--space-2);
 }
@@ -1123,7 +1126,9 @@ body .top-nav .nav-links {
 @media (max-width: 720px) {
     .sp-reader { --sp-topbar-h: 54px; }
 
-    /* 窄屏用底部条:拇指够得到,比顶栏按钮顺手 */
+    /* 窄屏用底部条:拇指够得到,比顶栏按钮顺手。
+       有了底部条,顶栏里那两颗「目录/生词本」就重复了,收掉。 */
+    .sp-reader-toggle { display: none; }
     .sp-bottombar {
         position: fixed;
         left: 0;
@@ -1144,9 +1149,9 @@ body .top-nav .nav-links {
         gap: 6px;
         min-height: 50px;
         border: none;
-        background: var(--bg-glass);
-        -webkit-backdrop-filter: blur(14px);
-        backdrop-filter: blur(14px);
+        /* 这里用不透明底:底部条正压在正文上,
+           玻璃底会把下面的字透上来,读起来很吵。 */
+        background: var(--bg-card);
         color: var(--text-secondary);
         font-family: var(--font-ui);
         font-size: 13px;

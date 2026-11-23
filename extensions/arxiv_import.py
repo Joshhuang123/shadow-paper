@@ -264,7 +264,12 @@ def _blocks_from_ast(blocks, base_dir: Path, asset_dir: Path, paper_id: str) -> 
                 out.append({"k": "fig", "src": png, "caption": ctext, "orig": src})
         elif t == "Table":
             rows = _table_rows(b)
-            cap = _inline_text(b.get("c", [])[3]) if len(b.get("c", [])) > 3 else ""
+            c = b.get("c") or []
+            cap = _inline_text(c[1][1]) if len(c) > 1 and isinstance(c[1], list) and len(c[1]) > 1 else ""
+            # 论文没写表题时，pandoc 会拿**列名**自动生成一个表题，
+            # 拼出来是 "RoleTask skillsCoordinationSupply"（没空格，重复表头）→ 丢掉。
+            if rows and cap.replace(" ", "") == "".join(rows[0]):
+                cap = ""
             if rows:
                 out.append({"k": "table", "rows": rows, "caption": cap})
         elif t == "Div":
