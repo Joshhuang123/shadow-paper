@@ -1,0 +1,349 @@
+/* ============================================================================
+   tokens.css — Design tokens (R16)
+   唯一来源: docs/DESIGN.md
+   任何颜色/字号/间距/圆角/阴影/动效改动,先改这里,再改组件。
+   ============================================================================ */
+
+:root {
+    /* ===== 色板·品牌 ===== */
+    --color-primary:       #B86A4E;
+    --color-primary-light: #D89B7E;
+    --color-primary-dark:  #A55A40;
+    --color-secondary:     #6B8A52;
+    --color-accent:        #D4A574;
+
+    /* 主色当「底色」用时另取一档。#B86A4E 配白字只有 4.03:1,
+       低于 WCAG AA 正文要求的 4.5:1;压到 #A55A40 是 5.08:1,
+       色相不变,肉眼看还是同一个暖棕,只是沉了半档。
+       规则:凡是「主色底 + 反色字」都用 primary-fill;
+       --color-primary 留给边框、进度条、正文强调这些不用它承载文字的场景。 */
+    --primary-fill:        #A55A40;
+    --primary-fill-hover:  #8F4A31;
+
+    /* ===== 色板·背景 =====
+       往「墨水经典」那套(ink + paper)靠:纸不再是接近纯白的 #FAF9F6,
+       而是有一点暖灰的米白,和正文墨色形成更明显的层次。
+       调色参考 guizang-ppt-skill 风格 A「电子杂志 × 电子墨水」的
+       --paper:#f1efea / --paper-tint:#e8e5de,整体再暖一点偏本项目的赤陶调。 */
+    --bg:            #F4F1EA;
+    --bg-card:       #FCFBF8;
+    --bg-dark:       #EAE5DA;
+    --bg-overlay:    rgba(45, 42, 38, 0.5);
+    /* 抽屉遮罩:只提示「点空白处可关」,不把正文压暗。
+       跟读时孩子要一边看句子一边录音,正文一暗就没法读了。 */
+    --bg-scrim:      rgba(45, 42, 38, 0.16);
+    --bg-gradient-start: #F7F4EE;
+    --bg-gradient-end:   #EDE6D9;
+
+    /* ===== 色板·文字 ===== */
+    --text-primary:   #2D2A26;
+    --text-secondary: #5A544C;
+    --text-disabled:  #A39E94;
+    --text-on-primary:#FFFFFF;
+
+    /* ===== 色板·边框 / 分隔 ===== */
+    --border:        #D6CFC0;
+    --border-strong: #A39E94;
+    --divider:       #EBE5D8;
+
+    /* ===== 色板·语义 ===== */
+    --danger:  #C25B56;
+    --warning: #D4A574;
+    --success: #6B8A52;
+    --info:    #7A8B9F;
+
+    /* ===== 软色(tint)===== 用于 Tag/Badge 等需要淡化背景色场合 ===== */
+    --tint-primary:   rgba(184, 106, 78, 0.10);
+    --tint-secondary: rgba(107, 138, 82, 0.10);
+    --tint-accent:    rgba(212, 165, 116, 0.15);
+    --tint-danger:    rgba(194, 91, 86, 0.10);
+    --tint-info:      rgba(122, 139, 159, 0.10);
+
+    /* 「当前句」专用底色:比 --tint-primary 再淡一档。
+       单独开一个是因为当前句可能一整段那么长 —— 用 --tint-primary
+       会把整段刷成一块荧光板,像被马克笔涂过。 */
+    --tint-active:   rgba(184, 106, 78, 0.075);
+
+    /* ===== 字体栈 =====
+       这是「像书不像 App」最关键的一处改动。
+       书里的英文句子用衬线,界面用无衬线,两者分开。
+
+       为什么用**系统**衬线而不是项目里已有的 Noto Serif SC:
+       那三个 ttf 每个 14MB、共 44MB,而简报明写「不上 webfont(局域网
+       加载慢)」。iPad/macOS 自带 Georgia / Iowan Old Style / Palatino,
+       都是很成熟的屏幕衬线,零下载、立刻可用。
+
+       CJK 故意排在最后走 PingFang(黑体):手机上宋体的细笔画会发虚,
+       10 岁孩子在小屏上读中文反而更难。衬线管英文,黑体管中文,
+       是出版物的标准混排做法。 */
+    --font-reading: Georgia, 'Iowan Old Style', 'Palatino',
+                    'Times New Roman', 'PingFang SC', sans-serif;
+    /* 标题字体:拉丁走老式衬线,中文走系统宋体。
+       原来中文落在 PingFang(黑体)上 —— 等于标题其实是黑体,
+       「像书不像 App」最关键的一环根本没生效。
+       Songti SC 是 macOS / iOS 自带的中文衬线(宋体),
+       Windows 走 SimSun / 思源宋体 —— 全部零下载。
+       字体回退是**逐字**的:拉丁字形取 Iowan/Palatino,
+       中文字形自动落到后面的宋体,正是出版物���混排做法。 */
+    --font-display: 'Iowan Old Style', 'Palatino', Georgia,
+                    'Songti SC', 'STSong', 'SimSun',
+                    'Source Han Serif SC', 'Noto Serif CJK SC', serif;
+
+    /* 粗标题专用:宋体只有 Light/Regular/Black 三档,直接写
+       font-weight:700 会让浏览器**合成加粗** —— 笔画糊成一片、字腔发黑,
+       实测比 400 还难看(见 §17)。
+       macOS/iOS 的「Songti SC Black」是一个独立字族,里面就是真 Black,
+       列在前面就能拿到干净的粗体,不会被合成。
+       拉丁字形不受影响:Iowan/Palatino 自带真粗体,排在最前面先被取走。 */
+    --font-display-bold: 'Iowan Old Style', 'Palatino', Georgia,
+                         'Songti SC Black', 'STSongti-SC-Black',
+                         'Songti SC', 'STSong', 'SimSun',
+                         'Source Han Serif SC', 'Noto Serif CJK SC', serif;
+
+    --font-sans: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue',
+                 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'SF Mono', Menlo, Consolas, monospace;
+
+    /* 界面文字(按钮、导航、标签)统一走无衬线 —— 界面要清楚不抢戏。 */
+    --font-ui: var(--font-sans);
+
+    /* ===== 字号 + 行高 ===== */
+    --text-xs:      12px;   line-height: 16px;
+    --text-sm:      14px;   line-height: 20px;
+    --text-base:    16px;   line-height: 24px;
+    --text-lg:      18px;   line-height: 28px;
+    --text-xl:      22px;   line-height: 30px;
+    --text-2xl:     28px;   line-height: 36px;
+    --text-3xl:     36px;   line-height: 44px;
+    --text-display: 48px;   line-height: 56px;
+
+    /* ===== 字重 ===== */
+    --font-regular:   400;
+    --font-medium:    500;
+    --font-semibold:  600;
+    --font-bold:      700;
+
+    /* ===== 间距(8 进制 + 4 微调)===== */
+    --space-0: 0;
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+    --space-6: 32px;
+    --space-7: 48px;
+    --space-8: 64px;
+    --space-9: 96px;
+
+    /* 纸在灯下的样子:右上角一束暖光、左下角一点冷光。
+       幅度必须极小(3~4%),大一点就变成「打了灯的网页」。
+       这是 deck 的 slide 底色做法,从暗底挪到纸面上。 */
+    --paper-glow:
+        radial-gradient(1100px 620px at 82% -6%,
+            rgba(212, 165, 116, 0.11) 0%, transparent 62%),
+        radial-gradient(820px 560px at 4% 102%,
+            rgba(122, 139, 159, 0.07) 0%, transparent 60%);
+
+    /* ===== 纸面质感 =====
+       纯色底看着像后台管理系统,不像"一本书"。加一层极淡的纸纹:
+       两个 45°/135° 的重复渐变叠在一起,肉眼几乎看不出来,但大面积的
+       背景不再是一块死板的纯色。
+       幅度必须小 —— 超过 1.5% 就会变成"脏",那是做旧,不是质感。 */
+    --paper-grain:
+        repeating-linear-gradient(115deg,
+            rgba(45, 42, 38, 0.014) 0px,
+            rgba(45, 42, 38, 0.014) 1px,
+            transparent 1px,
+            transparent 3px),
+        repeating-linear-gradient(35deg,
+            rgba(45, 42, 38, 0.010) 0px,
+            rgba(45, 42, 38, 0.010) 1px,
+            transparent 1px,
+            transparent 4px);
+
+    /* 发丝线:比 border 更淡,用于"分隔"而不是"描边" */
+    --rule: rgba(45, 42, 38, 0.09);
+    --rule-strong: rgba(45, 42, 38, 0.16);
+
+    /* 玻璃底:悬浮在纸面上的横条用它 —— 半透明 + 背景模糊,
+       读起来像一块浮在书页上的玻璃条,而不是一条实心色带。
+       模糊在下面这层铺的纸上生效,所以滚动时纸纹会从条下透出来。 */
+    --bg-glass: rgba(244, 241, 234, 0.72);
+    --bg-glass-line: rgba(45, 42, 38, 0.07);
+
+    /* 主按钮的"触感":顶部一道内高光(像被光从上面照到的实心键)
+       + 底下两层投影(接触影 + 弥散影)。只有实心键需要,幽灵键不需要。 */
+    --fill-inset: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    --fill-shadow: 0 1px 2px rgba(45, 42, 38, 0.10), 0 6px 18px rgba(165, 90, 64, 0.24);
+    --fill-shadow-hover: 0 2px 4px rgba(45, 42, 38, 0.10), 0 10px 26px rgba(165, 90, 64, 0.30);
+
+    /* 圆角 =====
+       收得很紧。理由:大圆角(16~24px)是 2015 年以后 App 模板的
+       默认长相,也是「一眼就像网页」的主要来源;印刷品、书、纸张
+       都是近乎方角的。deck 那份稿子全场 3px,质感就来自这个。
+       这里收到 3~14px —— 不是 0(那太生硬),但也不再是「气泡」。 */
+    --radius-none: 0;
+    --radius-sm:   3px;
+    --radius-md:   6px;
+    --radius-lg:   8px;
+    --radius-xl:   10px;
+    --radius-2xl:  14px;
+    --radius-pill: 9999px;
+
+    /* ===== 阴影 ===== */
+    /* 阴影:发丝边 + 紧一点的投影,比"一团大模糊"贵气。
+       大而散的阴影是网页模板感的主要来源。 */
+    --shadow-sm: 0 1px 2px rgba(45, 42, 38, 0.05);
+    --shadow-md: 0 1px 2px rgba(45, 42, 38, 0.04), 0 4px 12px rgba(45, 42, 38, 0.05);
+    --shadow-lg: 0 1px 2px rgba(45, 42, 38, 0.05), 0 8px 24px rgba(45, 42, 38, 0.07);
+    --shadow-xl: 0 2px 4px rgba(45, 42, 38, 0.05), 0 16px 48px rgba(45, 42, 38, 0.09);
+    /* 书立在架子上:接触影更硬一点,悬空感更强 */
+    --shadow-book: 0 1px 1px rgba(45, 42, 38, 0.10), 0 6px 16px rgba(45, 42, 38, 0.10);
+    --shadow-book-hover: 0 2px 3px rgba(45, 42, 38, 0.10), 0 14px 30px rgba(45, 42, 38, 0.14);
+
+    /* ===== 动效·时长 ===== */
+    --duration-fast:   100ms;
+    --duration-base:   200ms;
+    --duration-slow:   300ms;
+    --duration-slower: 500ms;
+
+    /* ===== 动效·缓动 ===== */
+    --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-in:     cubic-bezier(0.4, 0, 1, 1);
+    --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+    /* ===== 容器最大宽度 ===== */
+    --container-sm: 480px;
+    --container-md: 800px;
+    --container-lg: 1200px;
+}
+
+/* ===== 暗色模式 (R17) =========================================
+   三种触发方式:
+     [data-theme="dark"]  手动开启
+     [data-theme="light"] 手动开启浅色
+     不设置 / [data-theme="auto"]  → 跟随 prefers-color-scheme
+   ============================================================== */
+
+/* 手动 dark */
+:root[data-theme="dark"] {
+    --bg:            #1A1714;
+    --bg-card:       #252220;
+    --bg-dark:       #1F1C18;
+    --bg-overlay:    rgba(0, 0, 0, 0.65);
+    --bg-scrim:      rgba(0, 0, 0, 0.32);
+    --bg-gradient-start: #1F1B17;
+    --bg-gradient-end:   #15110D;
+
+    --text-primary:   #EDE6DA;
+    --text-secondary: #A39A8E;
+    --text-disabled:  #5A544C;
+    /* 暗色下主色被调亮成 #D89B7E,白字只有 2.36:1 读不清 → 按钮文字反过来用暖黑 6.06:1 */
+    --text-on-primary:#2D2A26;
+
+    --border:        #3D372F;
+    --border-strong: #5A544C;
+    --divider:       #2D2A26;
+
+    /* 暖棕主色亮一档,在深色背景上保持识别度 */
+    --color-primary:       #D89B7E;
+    --color-primary-light: #E8C4B0;
+    --color-primary-dark:  #B86A4E;
+    --color-secondary:     #8FAA7A;
+    --color-accent:        #D4A574;
+
+    /* 暗色下主色已调亮,配暖黑字 6.06:1,直接沿用即可 */
+    --primary-fill:        #D89B7E;
+    --primary-fill-hover:  #C98A6B;
+
+    --tint-primary:   rgba(216, 155, 126, 0.16);
+    --tint-secondary: rgba(143, 170, 122, 0.16);
+    --tint-accent:    rgba(212, 165, 116, 0.20);
+    --tint-danger:    rgba(194, 91, 86, 0.18);
+    --tint-info:      rgba(122, 139, 159, 0.18);
+
+    /* 暗色下底色比浅色显眼得多,当前句的底色要压得更淡 */
+    --tint-active:   rgba(216, 155, 126, 0.08);
+
+    /* 发丝线:暗色下要用「白墨」,深墨在深底上完全看不见。
+       这条是踩过的坑 —— 进度条的轨道在暗色下直接消失。 */
+    --rule:        rgba(237, 230, 218, 0.10);
+    --rule-strong: rgba(237, 230, 218, 0.20);
+
+    --bg-glass: rgba(26, 23, 20, 0.72);
+    --bg-glass-line: rgba(237, 230, 218, 0.08);
+
+    /* 暗色下主色是浅色,内高光要换成"压暗",否则按钮顶部会发白 */
+    --fill-inset: inset 0 1px 0 rgba(255, 255, 255, 0.10);
+    --fill-shadow: 0 1px 2px rgba(0, 0, 0, 0.40), 0 6px 18px rgba(0, 0, 0, 0.44);
+    --fill-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.44), 0 10px 26px rgba(0, 0, 0, 0.52);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.30);
+    --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.28), 0 4px 12px rgba(0, 0, 0, 0.30);
+    --shadow-lg: 0 1px 2px rgba(0, 0, 0, 0.30), 0 8px 24px rgba(0, 0, 0, 0.36);
+    --shadow-xl: 0 2px 4px rgba(0, 0, 0, 0.32), 0 16px 48px rgba(0, 0, 0, 0.42);
+    --shadow-book: 0 1px 1px rgba(0, 0, 0, 0.40), 0 6px 16px rgba(0, 0, 0, 0.44);
+    --shadow-book-hover: 0 2px 3px rgba(0, 0, 0, 0.44), 0 14px 30px rgba(0, 0, 0, 0.52);
+}
+
+/* 浅色不变(可选,显式声明浅色) */
+:root[data-theme="light"] {
+    /* 等同于 :root 的默认值;列出是为了语义清晰 */
+}
+
+/* 跟随系统:auto / 无属性 → 用 prefers-color-scheme */
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]):not([data-theme="dark"]) {
+        --bg:            #1A1714;
+        --bg-card:       #252220;
+        --bg-dark:       #1F1C18;
+        --bg-overlay:    rgba(0, 0, 0, 0.65);
+        --bg-scrim:      rgba(0, 0, 0, 0.32);
+        --bg-gradient-start: #1F1B17;
+        --bg-gradient-end:   #15110D;
+
+        --text-primary:   #EDE6DA;
+        --text-secondary: #A39A8E;
+        --text-disabled:  #5A544C;
+        --text-on-primary:#2D2A26;   /* 同上:亮底配深字 */
+
+        --border:        #3D372F;
+        --border-strong: #5A544C;
+
+        /* 暗色下的发丝线用白墨(见 :root[data-theme="dark"] 的说明) */
+        --rule:        rgba(237, 230, 218, 0.10);
+        --rule-strong: rgba(237, 230, 218, 0.20);
+
+        --bg-glass: rgba(26, 23, 20, 0.72);
+        --bg-glass-line: rgba(237, 230, 218, 0.08);
+
+        --fill-inset: inset 0 1px 0 rgba(255, 255, 255, 0.10);
+        --fill-shadow: 0 1px 2px rgba(0, 0, 0, 0.40), 0 6px 18px rgba(0, 0, 0, 0.44);
+        --fill-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.44), 0 10px 26px rgba(0, 0, 0, 0.52);
+        --divider:       #2D2A26;
+
+        --color-primary:       #D89B7E;
+        --color-primary-light: #E8C4B0;
+        --color-primary-dark:  #B86A4E;
+        --color-secondary:     #8FAA7A;
+        --color-accent:        #D4A574;
+
+        /* 暗色下主色已调亮,配暖黑字 6.06:1,直接沿用即可 */
+        --primary-fill:        #D89B7E;
+        --primary-fill-hover:  #C98A6B;
+
+        --tint-primary:   rgba(216, 155, 126, 0.16);
+        --tint-secondary: rgba(143, 170, 122, 0.16);
+        --tint-accent:    rgba(212, 165, 116, 0.20);
+        --tint-danger:    rgba(194, 91, 86, 0.18);
+        --tint-info:      rgba(122, 139, 159, 0.18);
+
+        --tint-active:   rgba(216, 155, 126, 0.08);
+
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.30);
+        --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.40);
+        --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.50);
+        --shadow-xl: 0 8px 32px rgba(0, 0, 0, 0.60);
+    }
+}

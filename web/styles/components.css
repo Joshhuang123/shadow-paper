@@ -1,0 +1,684 @@
+/* ============================================================================
+   components.css — 通用组件 (R16)
+   依赖: tokens.css (CSS 变量) + base.css (排版基础)
+   ============================================================================ */
+
+/* ===== 文字按钮(链接样式) ==========================
+   原来 .link-btn 定义在 pages/parent.css 里,只有家长页有。
+   首页的预览弹窗要用它,得放在公共层 —— 否则就是浏览器默认按钮
+   (带灰底灰边),在一片安静的书页上特别扎眼。 */
+.link-btn {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    padding: 0 4px;
+    background: none;
+    border: none;
+    font: inherit;
+    font-size: 0.85em;
+    color: var(--color-primary);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+    transition: color var(--duration-fast) var(--ease-out);
+}
+.link-btn:hover { color: var(--color-primary-dark); }
+
+/* ===== 按钮 (4 类 × 3 尺寸) ========================== */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    /* 48px 触控下限。这条以前漏了 —— .btn 只靠 padding 撑高度,
+       在没加载 parent.css 的页面(首页/跟读/语法/统计)上,
+       按钮只有 32px 高,孩子手指粗点不准。 */
+    min-height: 48px;
+    padding: 0 var(--space-4);
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    font-family: inherit;
+    font-weight: var(--font-medium);
+    cursor: pointer;
+    user-select: none;
+    transition:
+        background-color var(--duration-base) var(--ease-out),
+        border-color    var(--duration-base) var(--ease-out),
+        color           var(--duration-base) var(--ease-out),
+        transform       var(--duration-fast) var(--ease-out),
+        box-shadow      var(--duration-base) var(--ease-out);
+    text-decoration: none;
+    white-space: nowrap;
+}
+.btn:active { transform: scale(0.97); }
+.btn[disabled], .btn[aria-disabled="true"] {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+/* 尺寸
+   FRONTEND_BRIEF §七.1 已裁决「以 48px 为准」:10 岁孩子在 iPad 上点不准小按钮,
+   规范向 kid-touch.css 的实际实现看齐。这三档原先还是 DESIGN.md 初稿的
+   32/40/48,与裁决结果矛盾,这里一并改成 48/60/72。 */
+.btn-sm { height: 48px; padding: 0 var(--space-4); font-size: var(--text-base); }
+.btn-md { height: 60px; padding: 0 var(--space-5); font-size: var(--text-lg); }
+.btn-lg { height: 72px; padding: 0 var(--space-6); font-size: var(--text-2xl); border-radius: 50%; }
+
+/* 类型 */
+.btn-primary {
+    background: var(--primary-fill);
+    color: var(--text-on-primary);
+    border-color: var(--color-primary);
+}
+.btn-primary:hover { background: var(--primary-fill-hover); border-color: var(--primary-fill-hover); box-shadow: var(--shadow-md); }
+
+.btn-secondary {
+    background: transparent;
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+}
+.btn-secondary:hover { background: var(--bg-dark); }
+
+.btn-ghost {
+    background: transparent;
+    color: var(--color-primary);
+    border-color: transparent;
+}
+.btn-ghost:hover { background: var(--tint-primary); }
+
+.btn-danger {
+    background: var(--danger);
+    color: var(--text-on-primary);
+    border-color: var(--danger);
+}
+.btn-danger:hover { background: #A84B47; border-color: #A84B47; box-shadow: var(--shadow-md); }
+
+/* ===== 卡片 ========================== */
+.card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5);
+    box-shadow: var(--shadow-sm);
+    transition:
+        box-shadow var(--duration-base) var(--ease-out),
+        transform   var(--duration-base) var(--ease-out);
+}
+.card-clickable {
+    cursor: pointer;
+}
+.card-clickable:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.card-clickable:active { transform: translateY(0); }
+
+.card-header { margin-bottom: var(--space-4); }
+.card-title { font-size: var(--text-xl); font-weight: var(--font-semibold); color: var(--text-primary); margin: 0; }
+.card-subtitle { font-size: var(--text-sm); color: var(--text-secondary); margin-top: var(--space-1); }
+
+.stat-card {
+    text-align: center;
+    padding: var(--space-5);
+    background: var(--bg-card);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+}
+.stat-card .value {
+    font-size: var(--text-3xl);
+    font-weight: var(--font-semibold);
+    color: var(--color-primary);
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+}
+.stat-card .label {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    margin-top: var(--space-2);
+}
+
+/* ===== 输入框 ========================== */
+.input, input[type="text"], input[type="password"], input[type="number"], input[type="email"], select, textarea {
+    width: 100%;
+    height: 48px;   /* 同上,输入框也按 48px 下限 */
+    padding: 0 var(--space-4);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    font-size: var(--text-base);
+    color: var(--text-primary);
+    transition:
+        border-color var(--duration-base) var(--ease-out),
+        box-shadow   var(--duration-base) var(--ease-out);
+}
+textarea { height: auto; padding: var(--space-3) var(--space-4); min-height: 80px; resize: vertical; }
+
+.input:focus, input:focus, select:focus, textarea:focus {
+    border-color: var(--border-strong);
+    box-shadow: 0 0 0 3px var(--tint-primary);
+    outline: none;
+}
+
+.input-error, .input.has-error {
+    border-color: var(--danger);
+    box-shadow: 0 0 0 3px var(--tint-danger);
+}
+.input-help { font-size: var(--text-sm); color: var(--text-secondary); margin-top: var(--space-2); }
+.input-error-msg { font-size: var(--text-sm); color: var(--danger); margin-top: var(--space-2); }
+
+.input[disabled], input[disabled] {
+    background: var(--bg-dark);
+    color: var(--text-disabled);
+    cursor: not-allowed;
+}
+
+/* ===== 进度条 ========================== */
+.progress {
+    width: 100%;
+    height: 8px;
+    background: var(--bg-dark);
+    border-radius: var(--radius-pill);
+    overflow: hidden;
+}
+.progress-bar {
+    height: 100%;
+    background: var(--color-secondary);
+    border-radius: var(--radius-pill);
+    transition: width var(--duration-slower) var(--ease-out);
+}
+.progress-primary .progress-bar { background: var(--color-primary); }
+.progress-warning .progress-bar { background: var(--warning); }
+.progress-danger  .progress-bar { background: var(--danger); }
+
+/* ===== Tag / Badge ========================== */
+.tag {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-sm);
+    font-size: var(--text-xs);
+    font-weight: var(--font-medium);
+    line-height: 1;
+}
+.tag-learning { background: var(--tint-secondary); color: var(--color-secondary); }
+.tag-review   { background: var(--tint-accent);    color: var(--color-accent); }
+.tag-mastered { background: var(--tint-primary);   color: var(--color-primary); }
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-pill);
+    background: var(--primary-fill);
+    color: var(--text-on-primary);
+    font-size: var(--text-xs);
+    font-weight: var(--font-semibold);
+}
+.badge-secondary { background: var(--color-secondary); }
+.badge-accent { background: var(--color-accent); }
+
+/* ===== Header / Nav ========================== */
+header, .page-header {
+    text-align: center;
+    padding: var(--space-6) var(--space-5) var(--space-5);
+    color: var(--text-primary);
+}
+header h1, .page-header h1 { font-size: var(--text-3xl); margin-bottom: var(--space-2); }
+header p, .page-header p { color: var(--text-secondary); }
+
+/* ===== Loading spinner ========================== */
+.spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--border);
+    border-top-color: var(--color-primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    display: inline-block;
+}
+.spinner-lg { width: 32px; height: 32px; border-width: 3px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ===== Toast / Alert ========================== */
+.alert {
+    padding: var(--space-4) var(--space-5);
+    border-radius: var(--radius-md);
+    border-left: 4px solid var(--color-primary);
+    background: var(--bg-card);
+    color: var(--text-primary);
+}
+.alert-success { border-left-color: var(--success); background: var(--tint-secondary); color: var(--success); }
+.alert-danger  { border-left-color: var(--danger);  background: var(--tint-danger);  color: var(--danger); }
+.alert-warning { border-left-color: var(--warning); background: var(--tint-accent); color: var(--color-accent); }
+.alert-info    { border-left-color: var(--info);    background: var(--tint-info);   color: var(--info); }
+
+/* ===== Divider ========================== */
+.divider {
+    height: 1px;
+    background: var(--divider);
+    margin: var(--space-5) 0;
+}
+
+/* ===== 通用反馈状态 ===== */
+[aria-busy="true"] { cursor: wait; }
+[hidden] { display: none !important; }
+
+/* ===== 主题切换按钮 (R22) ==========================
+   五个页面共用。原来每页都写一段一模一样的内联 style="...",
+   但 CSP 的 style-src 'self' 没有 'unsafe-inline' → 内联 style 全被丢弃,
+   按钮渲染成浏览器默认灰按钮。抽成类之后才有颜色。 */
+.theme-btn {
+    background: var(--primary-fill);
+    color: var(--text-on-primary);
+    border: none;
+    border-radius: var(--radius-md);
+    padding: 6px 14px;
+    font-size: 1em;
+    font-family: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    margin-left: var(--space-3);
+    flex-shrink: 0;
+    min-height: 48px;
+    min-width: 48px;
+}
+.theme-btn:hover { background: var(--primary-fill-hover); }
+
+/* ============================================================
+   外壳重做 (2026-10-19 / 2026-10-20 二轮)
+   ------------------------------------------------------------
+   一轮:导航里混着彩色 emoji 和一个实心赤陶方块,谁都在抢;
+        每个页面的标题都是「emoji + 一行字」,没有层次;
+        品牌 logo 用了 135° 渐变,和整站「纸 + 墨」的低饱和基调冲突。
+
+   二轮(查了 editorial / paper 系的设计规范之后):上面那些改完,
+   还是一眼「网页应用」而不是「一本书」。差别在两处骨架上:
+
+     1. **导航条**。实心底 + 投影 + 圆角药丸 = 后台管理模板的头。
+        报纸的报头是:一块纸、名字用衬线、栏目之间用发丝线分开、
+        底下压一条细线。现在导航也这么做 —— 半透明玻璃压在纸上,
+        品牌名换成衬线,栏目当前项用一条贴底的发丝线标出来。
+     2. **页头**。居中 + 一个大圆角图标方块 = App 开屏页。
+        书籍的扉页是:一行小标签(eyebrow)、一个大标题、
+        一条压着的横线。四个非阅读页都改成这个结构。
+
+   下面这些规则刻意用 body .top-nav / .page-head 这类多一层选择器:
+   pages/*.css 里每页都有一份 .nav-link / .logo,而且加载顺序在
+   components.css 之后,同等特异性会输,所以必须压一个层级。
+   ============================================================ */
+
+/* ---- 报头:半透明玻璃压在一张纸上,底下只留一根发丝线 ----
+   原来那条 `box-shadow: 0 2px 10px` 是最典型的「网页应用头」特征:
+   顶栏必须是浮在内容上方的一块,才需要投影来证明它浮着。
+   报纸的报头不需要投影 —— 它本来就在纸上。 */
+body .top-nav {
+    background: var(--bg-glass);
+    -webkit-backdrop-filter: blur(14px) saturate(1.3);
+    backdrop-filter: blur(14px) saturate(1.3);
+    box-shadow: none;
+    border-bottom: 1px solid var(--rule);
+    padding: 10px var(--space-5);
+    min-height: 64px;
+}
+
+/* ---- 品牌:像报纸的报头名,衬线 + 一点字距,颜色是墨不是红 ---- */
+body .top-nav .nav-brand {
+    font-family: var(--font-display-bold);
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    color: var(--text-primary);
+    gap: 11px;
+}
+body .top-nav .nav-brand .logo {
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+    background: var(--tint-primary);
+    border: 1px solid rgba(184, 106, 78, 0.18);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+body .top-nav .nav-brand .logo .ico {
+    width: 17px;
+    height: 17px;
+    color: var(--primary-fill);
+}
+/* 名字和栏目之间竖一根发丝线,像报纸报头里的分隔。
+   只在有 logo 方块时画 —— 家长页的品牌是「锁 + 文字」,没有方块,
+   多画一根线就成了悬空的竖杠。 */
+body .top-nav .nav-brand:has(.logo)::after {
+    content: '';
+    width: 1px;
+    height: 20px;
+    margin-left: 4px;
+    background: var(--rule-strong);
+}
+
+/* ---- 导航链接:不用药丸底,当前项用一条贴底的发丝线 ----
+   药丸底(active 时一整块淡染)在纸面上太像「Tab 选中」。
+   报纸的栏目导航是:当前栏目的名字下面压一条 2px 的线。 */
+body .top-nav .nav-link {
+    position: relative;
+    background: none;
+    border-radius: 0;
+    padding: 10px 13px;
+    /* 48px 触控下限。首页的 .nav-link 原来只有文字高度(~40px),
+       窄屏收成纯图标后更只有 21px —— 10 岁孩子在小屏上点不准。
+       这里统一压一条线,所有页面都够得着。 */
+    min-height: 48px;
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-secondary);
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    transition: color var(--duration-fast) var(--ease-out);
+}
+body .top-nav .nav-link .ico {
+    width: 16px;
+    height: 16px;
+    color: currentColor;
+    opacity: 0.6;
+}
+body .top-nav .nav-link:hover {
+    background: none;
+    color: var(--text-primary);
+}
+body .top-nav .nav-link:hover .ico { opacity: 0.9; }
+body .top-nav .nav-link.active {
+    background: none;
+    color: var(--text-primary);
+    font-weight: var(--font-semibold);
+}
+body .top-nav .nav-link.active .ico { opacity: 1; color: var(--primary-fill); }
+/* 当前项的线压在导航底边那根发丝线上,像书页上的一道标记。
+   锚点用「导航的底边」而不是「链接的底边」:
+   导航高度会变(品牌名换行、窄屏折行),链接是垂直居中的,
+   按链接底边定位的话线会浮在半空。链接拉满导航高度,位置才稳。 */
+body .top-nav .nav-links { align-items: stretch; }
+body .top-nav .nav-link { display: inline-flex; align-items: center; }
+body .top-nav .nav-link.active::after {
+    content: '';
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    bottom: calc(-1 * var(--space-3));
+    height: 2px;
+    background: var(--color-primary);
+    border-radius: 2px 2px 0 0;
+}
+
+/* ---- 品牌 logo:去掉渐变,改成「纸面上的印记」 ---- */
+.top-nav .nav-brand .logo {
+    background: var(--tint-primary);
+    border: 1px solid rgba(184, 106, 78, 0.16);
+    border-radius: var(--radius-lg);
+}
+.top-nav .nav-brand .logo .ico {
+    width: 21px;
+    height: 21px;
+    color: var(--primary-fill);
+}
+
+/* ---- 导航链接:图标 + 文字 ---- */
+.top-nav .nav-link .ico {
+    width: 18px;
+    height: 18px;
+    color: currentColor;
+    opacity: 0.72;
+}
+.top-nav .nav-link.active .ico { opacity: 1; }
+
+/* active 原来是一整块实心 --color-primary,整条导航最响的就是它,
+   压过页面真正的标题。改成淡染底 + 主色字:一样一眼看出在哪,
+   但回到「提示」的分量。 */
+.top-nav .nav-link.active {
+    background: var(--tint-primary);
+    color: var(--primary-fill);
+    font-weight: var(--font-semibold);
+}
+.top-nav .nav-link:hover:not(.active) { background: var(--bg-dark); }
+
+/* ---- 音色选择:图标从 <option> 里搬出来 ----
+   <option> 只能放纯文本,原来只能靠 🔊 字符,一整套选项都带彩色
+   emoji。现在外面套一层,图标用真图标,选项文字干净。
+
+   另外它是报头里唯一一个「浏览器默认件」—— 原生 select 的白底 +
+   系统箭头,一眼就露馅了。改成纸面控件:透明底、发丝线描边、
+   自己画的小箭头(appearance:none 之后箭头得自己补)。 */
+body .top-nav .voice-picker {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    margin-left: var(--space-4);
+    padding-left: var(--space-4);
+    border-left: 1px solid var(--rule);
+}
+body .top-nav .voice-picker .ico {
+    width: 17px;
+    height: 17px;
+    color: var(--text-secondary);
+}
+body .top-nav .voice-picker .voice-select {
+    appearance: none;
+    -webkit-appearance: none;
+    min-height: 48px;          /* 48px 触控下限 */
+    padding: 0 32px 0 13px;
+    background: transparent;
+    border: 1px solid var(--rule-strong);
+    border-radius: 10px;
+    color: var(--text-secondary);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    cursor: pointer;
+    transition: border-color var(--duration-fast) var(--ease-out),
+                color var(--duration-fast) var(--ease-out);
+}
+body .top-nav .voice-picker .voice-select:hover {
+    border-color: var(--color-primary);
+    color: var(--text-primary);
+}
+/* 自己画的箭头:一个小小的折角,和整套线性图标同一套语言 */
+body .top-nav .voice-picker::after {
+    content: '';
+    position: absolute;
+    right: 13px;
+    top: 50%;
+    width: 6px;
+    height: 6px;
+    margin-top: -4px;
+    border-right: 1.5px solid var(--text-secondary);
+    border-bottom: 1.5px solid var(--text-secondary);
+    transform: rotate(45deg);
+    pointer-events: none;
+}
+
+/* ---- 主题按钮:原来是最响的实心块,改成安静的纸面按钮 ----
+   它只是「换外观」,不该比页面标题还显眼。 */
+/* 「颜色是标点」:主色留给真正要点的按钮(读一句、继续读、试听)。
+   换主题这种「换外观」的动作不该占一块实心色 —— 改成幽灵键。 */
+.theme-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    min-height: 48px;
+    padding: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--rule-strong);
+    border-radius: var(--radius-lg);
+    transition: background-color var(--duration-fast) var(--ease-out),
+                color var(--duration-fast) var(--ease-out),
+                border-color var(--duration-fast) var(--ease-out);
+}
+.theme-btn .ico { width: 20px; height: 20px; }
+.theme-btn:hover {
+    background: var(--tint-primary);
+    border-color: rgba(184, 106, 78, 0.32);
+    color: var(--primary-fill);
+}
+
+/* ---- 页头:全站统一的一个模式 ----
+   图标块 + 衬线大标题 + 灰副标题。之前每页各写一套
+   (hero / header / exam-header),字号、间距、居中方式都不一样。 */
+/* ---- 页头:书籍的扉页,不是 App 的开屏页 ----
+   原来:居中 + 一个 46px 的圆角图标方块 + 居中标题。
+   那是 App 开屏页的写法 —— 图标方块是「入口」的符号,不是「扉页」。
+
+   现在:一行小标签(eyebrow,小字距很大)、一个大衬线标题、
+   一条压着的发丝线。左对齐 —— 页面从左边开始读,像一张纸。 */
+.page-head {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+    padding: 0 0 22px;
+    margin-bottom: 30px;
+    border-bottom: 1px solid var(--rule);
+}
+.page-head-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0 0 13px;
+    font-family: var(--font-ui);
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+    color: var(--color-primary);
+}
+.page-head-eyebrow .ico { width: 14px; height: 14px; }
+/* 标签后面拖一根渐隐的短线(deck 的 device):
+   它把「这是个小标签」这件事说清楚了,比光靠字距更稳。 */
+.page-head-eyebrow::after {
+    content: '';
+    width: 46px;
+    height: 1px;
+    background: linear-gradient(90deg,
+        rgba(184, 106, 78, 0.42) 0%, transparent 100%);
+}
+.page-head-title {
+    font-family: var(--font-display-bold);
+    font-size: 44px;
+    line-height: 1.12;
+    /* 宋体在小字号下笔画细,标题要够重才立得住(和 deck 的 700/900 一致) */
+    font-weight: 700;
+    letter-spacing: 0.005em;
+    color: var(--text-primary);
+    margin: 0 0 10px;
+}
+.page-head-sub {
+    font-size: 15px;
+    line-height: 1.65;
+    /* 细字重:标题 700 + 正文 300 的对比,和 deck 的字重逻辑一样。
+       太小的字(<=13px)不用 300 —— 浅底上细笔画会发虚,影响可读性。 */
+    font-weight: 300;
+    color: var(--text-secondary);
+    margin: 0;
+    max-width: 40em;
+}
+/* 旧结构(.page-head-icon)留着不删:有的页面可能还在用,
+   改成低调一点的小印记,别再是一个抢戏的色块。 */
+.page-head-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: var(--radius-md);
+    background: var(--tint-primary);
+    border: 1px solid rgba(184, 106, 78, 0.16);
+    color: var(--primary-fill);
+    margin-bottom: 10px;
+}
+.page-head-icon .ico { width: 19px; height: 19px; }
+
+/* 页头底下那根线已经分过段了,紧跟的第一块不用再画一条 ——
+   两条平行的线隔 30px 摆在那儿,看着像画错了。 */
+.page-head + .card,
+.page-head + .exam-header,
+.page-head + .chart-section,
+.page-head + .streak-hero { border-top: none; }
+
+/* ---- 窄屏:报头要能收窄 ----
+   iPad 横屏(1180)和竖屏(820)都放得下,但手机宽度放不下:
+   实测 500px 视口下导航要 733px,直接溢出。
+   策略:先收音色选择(家长页还有),再把栏目收成纯图标。 */
+@media (max-width: 900px) {
+    body .top-nav .voice-picker { display: none; }
+}
+@media (max-width: 720px) {
+    /* 品牌文字收起,只留方块印记 */
+    body .top-nav .nav-brand > span { display: none; }
+    body .top-nav .nav-brand::after { display: none; }
+    /* 栏目收成图标:字距 0 让文字不占位,图标用固定 px 尺寸 */
+    body .top-nav .nav-link {
+        font-size: 0;
+        /* 21px 图标 + 左右 12px 内边距 = 45px 宽,过 44 的下限 */
+        padding: 0 12px;
+        gap: 0;
+    }
+    body .top-nav .nav-link .ico { width: 21px; height: 21px; }
+    body .top-nav .nav-link.active::after { left: 8px; right: 8px; }
+}
+/* 品牌永远不参与压缩 —— 挤成 0 宽比换行更难看 */
+body .top-nav .nav-brand { flex-shrink: 0; }
+
+/* ---- 卡片 / 分区标题:图标跟着文字走 ---- */
+.card-title,
+.section-title,
+.sidebar-title {
+    display: flex;
+    align-items: center;
+}
+.card-title .ico,
+.section-title .ico,
+.sidebar-title .ico {
+    width: 19px;
+    height: 19px;
+    color: var(--primary-fill);
+    opacity: 0.9;
+}
+
+/* ---- 儿童模式开关 ----
+   index.js 动态插到导航栏里(主题按钮旁边),之前是 append 到 body,
+   浮在视口左下角,像从别的页面掉下来的零件。
+   现在它是导航里的一个安静方钮,和主题按钮成对。 */
+.kid-mode-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    min-height: 48px;
+    padding: 0;
+    margin-left: var(--space-2);
+    border: 1px solid var(--rule-strong);
+    border-radius: var(--radius-lg);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background-color var(--duration-fast) var(--ease-out),
+                border-color var(--duration-fast) var(--ease-out),
+                color var(--duration-fast) var(--ease-out);
+}
+.kid-mode-toggle .ico { width: 20px; height: 20px; }
+.kid-mode-toggle:hover {
+    background: var(--tint-primary);
+    border-color: rgba(184, 106, 78, 0.28);
+}
+body.kid-mode .kid-mode-toggle {
+    background: var(--tint-primary);
+    border-color: rgba(184, 106, 78, 0.30);
+    color: var(--primary-fill);
+}

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Shadow Paper">
+    <meta name="theme-color" content="#B86A4E">
+    <meta name="description" content="Shadow Paper —— 论文阅读器:导入 arXiv / PDF,点词查义、生词本、艾宾浩斯复习、笔记与阅读进度。">
+    <title>Shadow Paper · 论文阅读器</title>
+
+    <link rel="stylesheet" href="/static/styles/tokens.css">
+    <link rel="stylesheet" href="/static/styles/base.css">
+    <link rel="stylesheet" href="/static/styles/icons.css">
+    <link rel="stylesheet" href="/static/styles/components.css">
+    <link rel="stylesheet" href="/static/styles/paper.css">
+    <link rel="manifest" href="/static/manifest.json">
+
+    <!-- dispatcher.js 提供 data-action 点击路由;theme.js 提供三态主题切换 -->
+    <script src="/static/js/dispatcher.js"></script>
+    <script src="/static/theme.js"></script>
+    <script src="/static/a11y.js"></script>
+    <script src="/static/js/shadow-paper.js"></script>
+    <script src="/static/js/shelf.js" defer></script>
+</head>
+<body>
+    <!-- 报头:品牌 + 主题切换 -->
+    <nav class="top-nav">
+        <div class="nav-brand">
+            <div class="logo"><span class="ico ico-books" aria-hidden="true"></span></div>
+            <span>Shadow Paper</span>
+        </div>
+        <div class="nav-links">
+            <span class="sp-eyebrow">论文阅读器</span>
+        </div>
+        <button class="theme-btn" data-action="cycleTheme" aria-label="切换主题">
+            <span class="ico ico-moon" aria-hidden="true"></span>
+        </button>
+    </nav>
+
+    <main class="sp-shelf">
+        <div class="page-head">
+            <span class="page-head-eyebrow"><span class="ico ico-books" aria-hidden="true"></span>Library</span>
+            <h1 class="page-head-title">论文书架</h1>
+            <p class="page-head-sub">导入一篇 arXiv 论文或一份 PDF,就能像读文献一样读它:点英文单词查义、收进生词本、按艾宾浩斯曲线复习,随手记笔记,进度自动保留。</p>
+        </div>
+
+        <!-- 导入区 -->
+        <section class="sp-import">
+            <div class="sp-import-head">
+                <h2 class="sp-import-title">导入论文</h2>
+                <p class="sp-import-sub">arXiv 编号,或本地 PDF 文件</p>
+            </div>
+
+            <div class="sp-import-row">
+                <input type="text" id="arxiv-input" autocomplete="off" spellcheck="false"
+                       placeholder="2611.05417 或 https://arxiv.org/abs/2611.05417"
+                       aria-label="arXiv 编号">
+                <button class="btn btn-primary" data-action="shelfImportArxiv">
+                    <span class="ico ico-download" aria-hidden="true"></span>导入
+                </button>
+                <button class="btn btn-secondary" data-action="shelfPickPdf">
+                    <span class="ico ico-layers" aria-hidden="true"></span>上传 PDF
+                </button>
+                <!-- 真正的 file input 藏在按钮后面 -->
+                <input type="file" id="pdf-input" accept=".pdf,application/pdf" hidden>
+            </div>
+
+            <!-- 导入进度:arXiv 导入要走一遍「下载源码 → 解析 LaTeX → 抽图」,
+                 可能要几十秒。没有这块反馈,用户会以为服务死了。 -->
+            <div class="sp-import-status" id="import-status" hidden role="status" aria-live="polite">
+                <div class="sp-import-status-head">
+                    <span class="spinner" id="import-spinner" aria-hidden="true"></span>
+                    <span id="import-status-title">正在导入…</span>
+                </div>
+                <div class="sp-import-status-detail" id="import-status-detail"></div>
+                <div class="sp-import-bar is-indeterminate" id="import-bar"><i></i></div>
+            </div>
+        </section>
+
+        <!-- 论文列表 -->
+        <h2 class="sp-shelf-title">我的论文 <span class="sp-shelf-count" id="shelf-count"></span></h2>
+
+        <div class="sp-empty" id="shelf-empty" hidden>
+            <div class="sp-empty-art" aria-hidden="true"><span class="ico ico-book"></span></div>
+            <h3 class="sp-empty-title">书架还是空的</h3>
+            <p class="sp-empty-sub">在上面填一个 arXiv 编号就能把论文拉进来 —— 比如 <code>2611.05417</code>(Organizing Intelligence)。也可以直接上传一份 PDF。</p>
+            <p class="sp-empty-hint">导入时后端会下载 arXiv 源码、解析 LaTeX 结构、抽出正文里的公式和插图,大约需要 30–90 秒。</p>
+        </div>
+
+        <div class="sp-paper-grid" id="paper-grid"></div>
+    </main>
+
+    <script>
+        // Service Worker 放在最后注册,别和首屏渲染抢带宽。
+        window.SP && window.SP.registerSW && window.SP.registerSW();
+    </script>
+</body>
+</html>

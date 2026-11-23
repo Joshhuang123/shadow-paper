@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Shadow Paper">
+    <meta name="theme-color" content="#B86A4E">
+    <title>Shadow Paper · 论文阅读器</title>
+
+    <link rel="stylesheet" href="/static/styles/tokens.css">
+    <link rel="stylesheet" href="/static/styles/base.css">
+    <link rel="stylesheet" href="/static/styles/icons.css">
+    <link rel="stylesheet" href="/static/styles/components.css">
+    <link rel="stylesheet" href="/static/styles/paper.css">
+    <link rel="manifest" href="/static/manifest.json">
+
+    <script src="/static/js/dispatcher.js"></script>
+    <script src="/static/theme.js"></script>
+    <script src="/static/a11y.js"></script>
+    <script src="/static/js/shadow-paper.js"></script>
+    <script src="/static/js/reader.js" defer></script>
+</head>
+<body class="sp-reader">
+    <!-- 顶栏:返回书架 / 标题 / 作者 / 面板开关 / 主题 -->
+    <header class="sp-reader-topbar">
+        <a href="/" class="sp-reader-back" title="返回书架">
+            <span class="ico ico-arrow-left" aria-hidden="true"></span>书架
+        </a>
+        <div class="sp-reader-head">
+            <h1 class="sp-reader-title" id="paper-title">加载中…</h1>
+            <p class="sp-reader-authors" id="paper-authors"></p>
+        </div>
+        <div class="sp-reader-tools">
+            <button class="sp-toolbtn sp-reader-toggle" data-action="toggleToc">
+                <span class="ico ico-tree" aria-hidden="true"></span>目录
+            </button>
+            <button class="sp-toolbtn sp-reader-toggle" data-action="togglePanel">
+                <span class="ico ico-layers" aria-hidden="true"></span>生词本
+            </button>
+            <span class="sp-sep" aria-hidden="true"></span>
+            <button class="theme-btn" data-action="cycleTheme" aria-label="切换主题">
+                <span class="ico ico-moon" aria-hidden="true"></span>
+            </button>
+        </div>
+    </header>
+
+    <div class="sp-reader-shell">
+        <!-- 左:目录 -->
+        <aside class="sp-toc" id="toc-panel" aria-label="目录">
+            <div class="sp-toc-head">
+                <h2 class="sp-toc-title">目录</h2>
+                <button class="sp-drawer-close" data-action="closeDrawers" aria-label="关闭目录">
+                    <span class="ico ico-close" aria-hidden="true"></span>
+                </button>
+            </div>
+            <nav class="sp-toc-list" id="toc-list"></nav>
+        </aside>
+
+        <!-- 中:正文 -->
+        <main class="sp-main">
+            <article class="sp-paper" id="paper-body">
+                <div class="sp-math-note" id="math-note" hidden></div>
+                <p class="text-secondary">正在载入论文…</p>
+            </article>
+        </main>
+
+        <!-- 右:生词本 + 笔记 -->
+        <aside class="sp-side" id="side-panel" aria-label="生词本与笔记">
+            <div class="sp-side-head">
+                <h2 class="sp-panel-title">生词本 · 笔记</h2>
+                <button class="sp-drawer-close" data-action="closeDrawers" aria-label="关闭面板">
+                    <span class="ico ico-close" aria-hidden="true"></span>
+                </button>
+            </div>
+
+            <section class="sp-panel">
+                <h3 class="sp-panel-title">
+                    生词本
+                    <span id="vocab-due"></span>
+                </h3>
+                <div class="sp-buckets" id="vocab-buckets"></div>
+                <div id="review-area"></div>
+                <ul class="sp-word-list" id="vocab-list"></ul>
+            </section>
+
+            <section class="sp-panel">
+                <h3 class="sp-panel-title">笔记</h3>
+                <form class="sp-note-form" id="note-form" hidden>
+                    <p class="sp-note-quote" id="note-quote"></p>
+                    <textarea id="note-text" placeholder="写下你的想法…"></textarea>
+                    <div class="sp-note-form-actions">
+                        <button type="submit" class="btn btn-primary">保存</button>
+                        <button type="button" class="btn btn-secondary" data-action="cancelNote">取消</button>
+                    </div>
+                </form>
+                <ul class="sp-note-list" id="note-list"></ul>
+            </section>
+        </aside>
+    </div>
+
+    <!-- 窄屏底部条:拇指够得到 -->
+    <nav class="sp-bottombar">
+        <button data-action="toggleToc"><span class="ico ico-tree" aria-hidden="true"></span>目录</button>
+        <button data-action="togglePanel"><span class="ico ico-layers" aria-hidden="true"></span>生词本</button>
+    </nav>
+
+    <div class="sp-scrim" id="scrim" data-action="closeDrawers" aria-hidden="true"></div>
+
+    <!-- 选中文本后浮出的「记笔记」按钮 -->
+    <button class="sp-note-fab" id="note-fab" data-action="startNote">
+        <span class="ico ico-pencil" aria-hidden="true"></span>记笔记
+    </button>
+
+    <!-- 查词弹窗 -->
+    <div class="sp-modal" id="dict-modal" hidden role="dialog" aria-modal="true" aria-labelledby="dict-word">
+        <div class="sp-modal-card" id="dict-card">
+            <div class="sp-modal-head">
+                <div>
+                    <h2 class="sp-modal-word" id="dict-word"></h2>
+                    <p class="sp-modal-phon" id="dict-phon"></p>
+                </div>
+                <button class="sp-modal-close" data-action="closeDict" aria-label="关闭">
+                    <span class="ico ico-close" aria-hidden="true"></span>
+                </button>
+            </div>
+            <div class="sp-modal-body" id="dict-body"></div>
+            <div class="sp-modal-actions">
+                <button class="btn btn-primary" id="dict-add" data-action="addVocab">加入生词本</button>
+                <button class="btn btn-secondary" id="dict-translate" data-action="translateSentence">翻译整句</button>
+            </div>
+            <p class="sp-modal-hint" id="dict-hint"></p>
+        </div>
+    </div>
+
+    <script>
+        window.SP && window.SP.registerSW && window.SP.registerSW();
+    </script>
+</body>
+</html>
