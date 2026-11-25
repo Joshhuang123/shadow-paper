@@ -297,3 +297,72 @@ shadow-ebook (~/shadow-learning)          Shadow Paper (~/shadow-paper)
 ```
 
 两个项目**各自独立**，不共享数据库也不互相依赖；只有几个模块是按同一套语义搬过来的。
+
+---
+
+## 问这个库（论文库 + MCP）
+
+> shadow-paper 不只是「给人读论文的」，也是**给 agent 问论文的**。
+> 论文都在本地了，那也该让别的 agent 能直接问 —— 不然每次查都得人翻页面。
+
+### 网页上问
+
+书架页顶部有「问这个库」：只依据**库内论文原文**回答，每个结论标 `[篇号 / 章节]`，
+点出处 chip 直接跳回原文那篇。**答不出就说答不出**，不给像模像样的假答案。
+
+### 给别的 agent 用（MCP）
+
+```json
+{
+  "mcpServers": {
+    "shadow-paper": {
+      "command": "<shadow-paper 仓库的绝对路径>/.venv/bin/python",
+      "args": ["<shadow-paper 仓库的绝对路径>/mcp_server.py"],
+      "env": { "MINIMAX_API_KEY": "..." }
+    }
+  }
+}
+```
+
+stdio JSON-RPC（MCP 标准），和 `~/.semantix/mcp/server.mjs` 同一套写法。
+
+| 工具 | 作用 | 花不花钱 |
+|---|---|---|
+| `list_papers()` | 库里有什么（篇号/标题/作者/词数/节数） | 不花 |
+| `search_papers(query, limit, paper_id)` | BM25 检索 → 带出处的原文片段 | 不花 |
+| `get_paper(paper_id, section)` | 取一篇（或某节）正文 | 不花 |
+| `ask_library(question, top_k)` | 提问 → 基于原文的带引用答案 | **调一次模型** |
+
+网页上的答案和 agent 拿到的答案**同源**（共用 `extensions/library.py` 的检索+取证内核）。
+
+### 三条设计上的硬规矩
+
+1. **不许编。** 检索不到就说检索不到；材料不足以回答就说不足 —— 宁可答「库里没有」。
+2. **每个断言都要有出处。** 答案带 `[篇号 / 章节]`，能一键跳回原文。
+3. **默认不调模型。** search / get 全是纯本地 BM25 + SQLite，零成本、确定性、离线可用。
+
+### 检索是怎么做的（以及踩过的坑）
+
+- **BM25（纯 Python，零第三方依赖）**，不用向量：论文问答里问题里的术语
+  （方法名、指标名、benchmark）几乎总是**字面出现在原文**里，BM25 对术语精确匹配更准，
+  也不需要 embedding 模型、不花钱、可复现。语义泛化是 semantix 那条线的活。
+- **中文问句要先翻成英文检索词**：库里全是英文，BM25 是字面匹配，
+  中文问句一个 token 都命中不了。`ask_library` 检测到中文（或零命中）时，
+  先让模型翻一版检索词再搜 —— 只在这种情况下多花一次调用。
+- **表格的数字在 `rows` 里、章节标题也要进索引**：不然「推理速度快多少」
+  这种问题永远捞不到附录里那张 Clock-Time 表（表里的 token 是 `0.26` / `0.09`，
+  跟「速度」一个词都对不上）。
+
+### 导入这条路上修掉的坑（都在 `extensions/arxiv_import.py`）
+
+1. **下载被截断 → 静默出废件。** arxiv.org 的 e-print / PDF 在弱网下会被截断，
+   而 `tarfile.is_tarfile()` 只看文件头、照样 `True` → 解出一半 → 整篇论文被当成
+   只有附录的论文导进去，**而且返回 success**。现在：分块 Range 下载 + 长度校验 +
+   让 tar 走完整个归档，截断直接报错。
+2. **主文件不能靠「最大的 .tex」挑。** 多文件论文里附录常比正文还长
+   （`sec/7_suppl.tex` 20535 字节 > 正文 6317 字节）→ 挑中附录。
+   现在认 `\documentclass`，并且 `download_source` 返回**解包根目录**
+   （以前返回「最大的 .tex 所在目录」，把主文件搜索限死在子目录里，图也解析不到）。
+3. **参考文献要可失败。** `\bibliography{xxx}` 会让 pandoc 去解析它写的那个 bib
+   （不存在 / 语法读不了 → 整篇导入失败）。现在先把这条命令中和掉，
+   bib 由 `--bibliography` 显式给；bib 读不了就退回不带 citeproc，正文照进。

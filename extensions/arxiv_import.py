@@ -26,6 +26,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import time
 import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -46,6 +47,68 @@ def _get(url: str, timeout: int = 90) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent": UA})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
+
+
+def _get_range(url: str, timeout: int = 120, chunk: int = 512 * 1024) -> bytes:
+    """按 HTTP Range 分块下载并**校验完整性**。
+
+    为什么需要它（2026-11-24 实测）：
+      arxiv.org 的 e-print（源码包）和 PDF 在弱网下**整包连接会被截断**，
+      一次 urlopen().read() 拿到的是半截数据 —— 而 tarfile.is_tarfile()
+      只看文件头、照样 True，于是静默解出一半、导进来一篇只有附录的「论文」。
+      整包重试十次都可能断；按 512KB 一段 Range 拉、拼起来对长度，一次就成。
+
+    流程：
+      ① 先 GET 拿真实 URL（arxiv 的 /e-print 会 302）和 Content-Length
+      ② 服务端支持 Range（Accept-Ranges: bytes）就分块拉，逐块校验长度
+      ③ 不支持 Range 就退回整包 GET，但仍**比对长度**，对不上就报错
+    """
+    # ① 解析真实 URL 与大小
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        real = r.geturl()
+        try:
+            total = int(r.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            total = 0
+        accepts = (r.headers.get("Accept-Ranges") or "").lower()
+        if not total:
+            data = r.read()
+            return data
+    if "bytes" not in accepts:
+        # 不支持 Range：整包拉，但要对长度
+        data = _get(real, timeout=timeout)
+        if total and len(data) != total:
+            raise ImportError_(
+                f"下载不完整（{len(data)}/{total} 字节）——重试即可")
+        return data
+
+    # ② 分块拉
+    out = bytearray()
+    pos = 0
+    while pos < total:
+        end = min(pos + chunk, total) - 1
+        last = None
+        for attempt in range(5):
+            try:
+                rq = urllib.request.Request(
+                    real, headers={**{"User-Agent": UA}, "Range": f"bytes={pos}-{end}"})
+                with urllib.request.urlopen(rq, timeout=timeout) as rr:
+                    data = rr.read()
+                if len(data) != (end - pos + 1):
+                    raise IOError(f"块长度 {len(data)} != {end - pos + 1}")
+                out += data
+                pos = end + 1
+                last = None
+                break
+            except Exception as e:  # noqa: BLE001
+                last = e
+                time.sleep(1.5 * (attempt + 1))
+        if last is not None:
+            raise ImportError_(f"分块下载失败（{pos}/{total}）：{last!r}"[:180])
+    if len(out) != total:
+        raise ImportError_(f"下载不完整（{len(out)}/{total} 字节）——重试即可")
+    return bytes(out)
 
 
 # ── arXiv 元数据 ──────────────────────────────────────────────
@@ -82,20 +145,36 @@ def download_source(pid: str, workdir: Path) -> Path:
     """下载 e-print 源码包并解包，返回主 .tex 的目录。"""
     tarball = workdir / "src.tar.gz"
     try:
-        tarball.write_bytes(_get(EPRINT.format(pid=pid), timeout=180))
+        raw = _get_range(EPRINT.format(pid=pid), timeout=180)
     except Exception as e:
         raise ImportError_(f"arXiv 源码下载失败（{pid}）：{e}") from e
+    # ⚠️ 下载完整性必须校验（2026-11-24 实测踩中）：
+    #    arxiv.org 的 e-print 在弱网下会被**截断**，而 tarfile.is_tarfile()
+    #    只看文件头、照样返回 True —— 于是 extractall 静默解出一半，
+    #    剩下的 .tex 缺失，最后「最大的 .tex」挑中了附录，
+    #    **整篇论文被当成只有附录的论文导进去，而且报 success**。
+    #    现在：先按 Content-Length 对长度，再让 tar 自己走完整个归档。
+    try:
+        tarball.write_bytes(raw)
+    except Exception as e:
+        raise ImportError_(f"arXiv 源码落盘失败（{pid}）：{e}") from e
 
     ex = workdir / "src"
     ex.mkdir(parents=True, exist_ok=True)
     # arXiv 的包有三种形态：.tar.gz / .gz(单文件) / 裸 PDF
     if tarfile.is_tarfile(tarball):
-        with tarfile.open(tarball) as tf:
-            try:
-                # Python 3.12+ 有 filter（防路径穿越）；3.9 没有 —— 退一步即可
-                tf.extractall(ex, filter="data")
-            except TypeError:
-                tf.extractall(ex)
+        try:
+            with tarfile.open(tarball) as tf:
+                members = tf.getmembers()          # ← 走完整个归档，截断会抛
+                try:
+                    # Python 3.12+ 有 filter（防路径穿越）；3.9 没有 —— 退一步即可
+                    tf.extractall(ex, filter="data")
+                except TypeError:
+                    tf.extractall(ex)
+        except (tarfile.TarError, EOFError, OSError) as e:
+            raise ImportError_(
+                f"arXiv 源码包不完整（{pid}，已解出 {len(members) if 'members' in dir() else 0} 项）：{e}；"
+                "通常是下载被截断，重试即可") from e
     else:
         try:
             import gzip
@@ -105,13 +184,66 @@ def download_source(pid: str, workdir: Path) -> Path:
         except OSError:
             (ex / "main.tex").write_bytes(tarball.read_bytes())
 
-    texs = sorted(ex.rglob("*.tex"), key=lambda p: -p.stat().st_size)
-    if not texs:
+    if not list(ex.rglob("*.tex")):
         raise ImportError_(f"源码包里没有 .tex：{pid}")
-    return texs[0].parent
+    # ⚠️ 返回**解包根目录**，不是「最大的 .tex 所在的目录」（2026-11-24 实测）：
+    #    多文件论文里最大的 .tex 常在附录子目录里（SELR 的 sec/7_suppl.tex 最大），
+    #    以前返回它自己的目录 → 后面 find_main_tex 只在那个子目录里找，
+    #    于是「带 \documentclass 的主文件」根本不在搜索范围内 → 整篇被当成只有附录；
+    #    同时图片在根目录、相对路径解析不到 → 图数 0。
+    return ex
+
+
+def find_main_tex(base: Path) -> Path:
+    """挑**真正的主文件**：带 \documentclass 的那个。
+
+    为什么不能只挑最大的 .tex（2026-11-24 实测）：
+    多文件论文里附录常常比正文还长（SELR 的 sec/7_suppl 就是），
+    挑错主文件 → 整篇论文被当成只有附录。
+    找不到带 documentclass 的，退回「最大的那个」保持旧行为。
+    """
+    texs = sorted(base.rglob("*.tex"), key=lambda p: -p.stat().st_size)
+    if not texs:
+        raise ImportError_("源码包里没有 .tex")
+    for t in texs:
+        try:
+            head = t.read_text(encoding="utf-8", errors="replace")[:4000]
+        except OSError:
+            continue
+        if "\\documentclass" in head:
+            return t
+    return texs[0]
 
 
 # ── LaTeX 清洗 + pandoc 收敛 ─────────────────────────────────
+def _neutralize_bibliography(tex: str) -> str:
+    """把 tex 里的 \\bibliography{...} / \\addbibresource{...} 中和掉。
+
+    pandoc 的 LaTeX reader 会去解析 \\bibliography 写的那�� bib：
+    文件不存在 → "not found in resource path"；语法读不了 → 直接报错。
+    参考文献由 --bibliography 显式提供，tex 里那条命令留着只会添乱。
+    """
+    tex = re.sub(r"\\\\bibliography\s*\{[^}]*\}", "% bibliography neutralized", tex)
+    tex = re.sub(r"\\\\addbibresource\s*\{[^}]*\}", "% addbibresource neutralized", tex)
+    tex = re.sub(r"\\\\printbibliography", "% printbibliography neutralized", tex)
+    return tex
+
+
+def _is_bib_error(stderr: str) -> bool:
+    low = (stderr or "").lower()
+    return ("bibliography" in low or "citeproc" in low or "citation" in low
+            or ".bib" in low)
+
+
+def _run_pandoc(clean_path: Path, base_dir: Path, bib, with_citeproc: bool):
+    cmd = ["pandoc", str(clean_path), "-f", "latex", "-t", "json"]
+    if with_citeproc:
+        cmd.append("--citeproc")
+        if bib:
+            cmd.append(f"--bibliography={bib.resolve()}")
+    return subprocess.run(cmd, cwd=base_dir, capture_output=True, text=True, timeout=900)
+
+
 def _clean_and_convert(tex_path: Path, workdir: Path, base_dir: Path,
                         unwrap_cache: Optional[Path] = None) -> Dict[str, Any]:
     """清洗 tex → 迭代 pandoc → 返回 pandoc AST（dict）。"""
@@ -131,17 +263,25 @@ def _clean_and_convert(tex_path: Path, workdir: Path, base_dir: Path,
     for cand in sorted(base_dir.glob("*.bib")):
         bib = cand
         break
+    # ── 参考文献要「可失败」──（2026-11-24 实测）
+    # ① tex 里的 \bibliography{xxx} 会让 pandoc **去找它写的那个 bib**：
+    #    找不到就报 "File 'xxx.bib' not found in resource path"（2512.21711 就是这样，
+    #    它包里根本没有那个 bib），bib 本身语法 pandoc 读不了也直接报解析错（2608.13570）。
+    #    → 先把这条命令**中和掉**，bib 由 --bibliography 显式给。
+    # ② bib 读不了时不能整篇导入失败：正文才是本体，参考文献可以没有。
+    #    → 退回「不带 --citeproc」再跑一遍，正文照常进，refs 为空。
     for _ in range(30):
         latex_clean.clean_tex(tex_path, clean_path)
         s = clean_path.read_text(encoding="utf-8")
         for mac in unwrap:
             s = latex_clean.expand_named_macro(s, mac)
+        s = _neutralize_bibliography(s)
         clean_path.write_text(s, encoding="utf-8")
 
-        cmd = ["pandoc", str(clean_path), "-f", "latex", "-t", "json", "--citeproc"]
-        if bib:
-            cmd.append(f"--bibliography={bib.resolve()}")
-        p = subprocess.run(cmd, cwd=base_dir, capture_output=True, text=True, timeout=900)
+        p = _run_pandoc(clean_path, base_dir, bib, with_citeproc=True)
+        if p.returncode != 0 and _is_bib_error(p.stderr):
+            # bib 读不了 → 不带 citeproc 再来一次，正文优先
+            p = _run_pandoc(clean_path, base_dir, None, with_citeproc=False)
         if p.returncode == 0:
             if unwrap_cache:
                 unwrap_cache.parent.mkdir(parents=True, exist_ok=True)
@@ -384,7 +524,7 @@ def import_arxiv(pid: str, asset_dir: Path, unwrap_cache: Optional[Path] = None)
     with tempfile.TemporaryDirectory(prefix="arx_") as td:
         work = Path(td)
         base = download_source(pid, work)
-        main_tex = max(base.rglob("*.tex"), key=lambda p: p.stat().st_size)
+        main_tex = find_main_tex(base)
         ast = _clean_and_convert(main_tex, work, base, unwrap_cache)
         blocks = ast.get("blocks", [])
         sections, toc = _sections_from_ast(blocks, base, asset_dir, pid)

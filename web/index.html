@@ -46,6 +46,22 @@
         </div>
 
         <!-- 导入区 -->
+        <section class="sp-import sp-ask">
+            <div class="sp-import-head">
+                <h2 class="sp-import-title">问这个库</h2>
+                <p class="sp-import-sub">只依据库内论文原文回答，每个结论标出处；答不出就说答不出</p>
+            </div>
+            <div class="sp-import-row">
+                <input type="text" id="ask-input" autocomplete="off" spellcheck="false"
+                       placeholder="例如：Coconut 相比 CoT 在推理速度上快多少？"
+                       aria-label="向论文库提问">
+                <button class="btn btn-primary" data-action="shelfAsk">
+                    <span class="ico ico-search" aria-hidden="true"></span>提问
+                </button>
+            </div>
+            <div class="sp-ask-out" id="ask-out" hidden role="status" aria-live="polite"></div>
+        </section>
+
         <section class="sp-import">
             <div class="sp-import-head">
                 <h2 class="sp-import-title">导入论文</h2>

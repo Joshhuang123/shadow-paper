@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "shadow-paper": {
+      "command": "<shadow-paper 仓库的绝对路径>/.venv/bin/python",
+      "args": ["<shadow-paper 仓库的绝对路径>/mcp_server.py"],
+      "env": {
+        "MINIMAX_API_KEY": "填你的 key（只有 ask_library 用得上）",
+        "SHADOW_PAPER_MODEL": "MiniMax-M3.1-Flash"
+      }
+    }
+  }
+}

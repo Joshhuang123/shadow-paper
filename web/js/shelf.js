@@ -287,6 +287,13 @@
         els.bar = document.getElementById('import-bar');
         els.btnArxiv = document.querySelector('[data-action="shelfImportArxiv"]');
         els.btnPdf = document.querySelector('[data-action="shelfPickPdf"]');
+        els.askInput = document.getElementById('ask-input');
+        els.askOut = document.getElementById('ask-out');
+        els.askBtn = document.querySelector('[data-action="shelfAsk"]');
+
+        els.askInput.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') { e.preventDefault(); askQuestion(); }
+        });
 
         // 回车直接导入
         els.input.addEventListener('keydown', function (e) {
@@ -301,10 +308,87 @@
         loadPapers();
     }
 
+
+    /* ==========================================================
+       问这个库
+       ========================================================== */
+
+
+    /* 答案里模型会写 **粗体**、还有换行和列表。
+       这里做一层轻量渲染：先转义、再把 **…** 变成 <strong>，其余保留换行。
+       不引 Markdown 库（这个仓是零前端依赖的）。 */
+    function renderAnswer(text) {
+        var frag = document.createDocumentFragment();
+        var esc = String(text)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        var parts = esc.split(/(\*\*[^*]+\*\*)/g);
+        parts.forEach(function (p) {
+            if (/^\*\*[^*]+\*\*$/.test(p)) {
+                frag.appendChild(SP.el('strong', {}, [p.slice(2, -2)]));
+            } else if (p) {
+                frag.appendChild(document.createTextNode(p));
+            }
+        });
+        return frag;
+    }
+
+    function renderAsk(res) {
+        SP.fill(els.askOut, []);
+
+        if (res.error && !res.answer) {
+            els.askOut.appendChild(SP.el('div', { class: 'sp-ask-note' },
+                ['检索/生成失败：' + res.error]));
+            els.askOut.hidden = false;
+            return;
+        }
+
+        els.askOut.appendChild(SP.el('div', { class: 'sp-ask-body' },
+            [renderAnswer(res.answer || '（没有正文）')]));
+
+        if (res.citations && res.citations.length) {
+            var cites = SP.el('div', { class: 'sp-ask-cites' });
+            res.citations.forEach(function (c) {
+                var chip = SP.el('button', {
+                    class: 'sp-ask-cite', type: 'button',
+                    title: c.title || ''
+                }, [(c.paper_id || '') + ' · ' + (c.section || '')]);
+                chip.addEventListener('click', function () {
+                    window.location.href = '/read/' + encodeURIComponent(c.paper_id);
+                });
+                cites.appendChild(chip);
+            });
+            els.askOut.appendChild(cites);
+        }
+
+        var note = '检索到 ' + (res.passages ? res.passages.length : 0) + ' 段原文' +
+                   (res.used_llm ? '，答案由模型基于这些原文生成' : '（未调用模型，只给原文片段）');
+        els.askOut.appendChild(SP.el('div', { class: 'sp-ask-note' }, [note]));
+
+        els.askOut.hidden = false;
+    }
+
+    function askQuestion() {
+        var q = (els.askInput.value || '').trim();
+        if (!q) return;
+        els.askBtn.disabled = true;
+        els.askOut.hidden = false;
+        SP.fill(els.askOut, []);
+        els.askOut.appendChild(SP.el('div', { class: 'sp-ask-note' }, ['正在检索并作答…']));
+
+        SP.postJSON('/api/ask', { question: q, top_k: 8 })
+            .then(renderAsk)
+            .catch(function (e) {
+                els.askOut.appendChild(SP.el('div', { class: 'sp-ask-note' },
+                    ['问库失败：' + (e && e.message ? e.message : e)]));
+            })
+            .then(function () { els.askBtn.disabled = false; });
+    }
+
     // dispatcher.js 路由用的动作(参数顺序由 dispatcher 约定:arg, el, ev)
     window.shelfImportArxiv = importArxiv;
     window.shelfPickPdf = pickPdf;
     window.shelfDeletePaper = deletePaper;
+    window.shelfAsk = askQuestion;
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);

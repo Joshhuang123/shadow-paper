@@ -72,6 +72,47 @@ def register_routes(app):
                         "stats": doc.get("stats", {})})
 
     # ── 读取 ───────────────────────────────────────────────────
+    @app.route("/api/ask", methods=["POST"])
+    def ask_route():
+        """问这个库 —— 只依据库内论文原文回答，每个结论标出处。
+
+        这是 shadow-paper 从「阅读器」长成「IMA 式论文库」的那一步：
+        人可以在页面上读，agent 可以通过 MCP 问，**两边共用同一个检索+取证内核**
+        （extensions/library.py），所以网页上看到的答案和 agent 拿到的答案同源。
+        """
+        from . import library
+
+        payload = request.get_json(silent=True) or {}
+        q = (payload.get("question") or "").strip()
+        if not q:
+            return jsonify({"success": False, "error": "问题不能为空"}), 400
+        try:
+            res = library.ask(
+                q,
+                top_k=int(payload.get("top_k") or 8),
+                paper_id=(payload.get("paper_id") or None),
+            )
+        except Exception as e:  # noqa: BLE001
+            return jsonify({"success": False, "error": f"{e!r}"[:200]}), 500
+        out = {
+            "success": True,
+            "question": q,
+            "answer": res.get("answer") or "",
+            "citations": res.get("citations") or [],
+            "passages": res.get("passages") or [],
+            "used_llm": bool(res.get("used_llm")),
+        }
+        if res.get("error"):
+            out["error"] = res["error"]
+        return jsonify(out)
+
+    @app.route("/api/library")
+    def library_route():
+        """库概览：几篇、多少词、多少检索片段。"""
+        from . import library
+
+        return jsonify({"success": True, **library.library_stats()})
+
     @app.route("/api/papers")
     def papers_list():
         return jsonify({"success": True, "papers": db.list_papers()})

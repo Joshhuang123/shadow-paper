@@ -181,7 +181,16 @@ def _page_lines(page) -> List[Dict]:
     """一页 → [{text, size, x0, x1, top}]。"""
     out = []
     try:
-        lines = page.extract_text_lines(layout=False, strip=True)
+        # ⚠️ x_tolerance 必须收紧（2026-11-24 实测）：
+        #    pdfplumber 默认 3，LaTeX 排版的词间距约 3pt 会被它当成「同一个词」，
+        #    于是整段文字**粘连**——「COCONUT as a pseudo-reasoning mechanism」
+        #    变成「CONUTasapseudo-reasoningmechanism」。
+        #    后果有三：读者看到的是黏字、检索匹配不到、切句把词切坏。
+        #    2 是实测的临界值（≤2 正常、3 开始粘）。
+        try:
+            lines = page.extract_text_lines(layout=False, strip=True, x_tolerance=2)
+        except TypeError:
+            lines = page.extract_text_lines(layout=False, strip=True)
     except Exception:
         return out
     for ln in lines:
