@@ -106,6 +106,18 @@ def register_routes(app):
             out["error"] = res["error"]
         return jsonify(out)
 
+    @app.route("/api/paper/lang", methods=["POST"])
+    def set_lang():
+        """记下语言偏好（cookie 一年）。前端切换时调它，然后重载页面。"""
+        payload = request.get_json(silent=True) or {}
+        lang = (payload.get("lang") or "zh").lower()
+        if lang not in ("zh", "en", "cn", "zh-cn"):
+            lang = "zh"
+        resp = jsonify({"success": True, "lang": lang})
+        resp.set_cookie("sp_lang", "zh" if lang.startswith("zh") else "en",
+                        max_age=365 * 24 * 3600, samesite="Lax")
+        return resp
+
     @app.route("/api/library")
     def library_route():
         """库概览：几篇、多少词、多少检索片段。"""
@@ -118,22 +130,33 @@ def register_routes(app):
         papers = db.list_papers()
         for row in papers:
             row["has_zh"] = db.has_zh(row["id"])
-        return jsonify({"success": True, "papers": papers})
+        # 语言偏好跟正文页同一套规则（cookie → 默认中文），
+        # 书架按它决定显示中文标题还是英文原名。
+        q_lang = (request.args.get("lang") or "").lower()
+        cookie_lang = (request.cookies.get("sp_lang") or "").lower()
+        lang = "en" if (q_lang or cookie_lang).lower() == "en" else "zh"
+        return jsonify({"success": True, "papers": papers, "lang": lang})
 
     @app.route("/api/paper/<pid>")
     def paper_detail(pid):
         doc = db.load_paper(pid)
         if not doc:
             return jsonify({"success": False, "error": "没有这篇论文"}), 404
-        # ?lang=zh 取中文版（没译过就自动回落英文）。
-        # has_zh 一起返回，前端据此决定「中文/原文」开关给不给点。
-        lang = (request.args.get("lang") or "").lower()
+        # 语言偏好：**cookie 优先，其次 ?lang= 参数，默认中文版**。
+        # 为什么用 cookie 而不是让前端拼 ?lang=：
+        #   ① 偏好要跨论文记住（看中文版翻到下一篇，不该又跳回英文）；
+        #   ② 前端加参数会被浏览器的 JS 缓存卡住 —— 改完 reader.js 还在跑旧版，
+        #      页面看着「按钮在、切换不生效」，极难查。
+        #   → 语言判断放在**服务端**：即使前端是旧版，页面照样显示中文版。
+        q_lang = (request.args.get("lang") or "").lower()
+        cookie_lang = (request.cookies.get("sp_lang") or "").lower()
+        lang = q_lang or cookie_lang or "zh"
         zh_doc = db.load_zh_paper(pid)
         if lang in ("zh", "cn", "zh-cn") and zh_doc:
             return jsonify({"success": True, "paper": zh_doc, "lang": "zh",
                             "has_zh": True, "title_en": doc.get("title")})
         return jsonify({"success": True, "paper": doc, "lang": "en",
-                        "has_zh": bool(zh_doc), "title_zh": (zh_doc or {}).get("title_zh")})
+                        "has_zh": bool(zh_doc), "title_en": doc.get("title")})
 
     @app.route("/api/paper/<pid>", methods=["DELETE"])
     def paper_delete(pid):

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import List
 
 
 # ── 花括号配对扫描 ────────────────────────────────────────────
@@ -136,6 +137,56 @@ def _humanize_ref(key):
     return re.sub(r"\s+", " ", k).strip()
 
 
+def expand_bare_macro_uses(s, defs):
+    """展开**不带花括号**的自定义宏用法：\\ours → \\textsc{Coconut}。
+
+    ⚠️ 这一段是 2026-11-26 补的，漏了它会**静默丢词**：
+      extract_macros 把宏定义删了，expand_macro_uses 只管 `\\ours{...}` 这种带参调用，
+      而 `\\section{\\ours: Chain of Continuous Thought}` 这种**裸用法**没人管。
+      pandoc 不认识 `\\ours`，会把它连同后面的内容一起吃掉 ——
+      结果整篇论文里 "Coconut" 这个方法名消失了，连章节标题都变成
+      「: Chain of Continuous Thought」（前面凭空多一个冒号）。
+
+    规则：
+      · 只替换**完整命令名**（`\\ours` 后面不能跟字母），避免误伤 `\\oursfoo`
+      · 支持星号形式 `\\ours*`
+      · 宏体里的 #1 / #2 一律换成空（裸用法本来就没有实参）
+      · 宏体里可能还有别的裸宏（`\\ours` → `\\textbf{\\coconut}`）→ 迭代到收敛
+    """
+    if not defs:
+        return s
+    for _ in range(5):
+        changed = False
+        for mac, (nargs, body) in defs.items():
+            # 宏体里的占位符换空；\xspace 之类「只在排版时起作用的空格宏」换成真空格
+            plain = body
+            for i in range(1, max(nargs, 3) + 1):
+                plain = plain.replace(f"#{i}", "")
+            plain = re.sub(r"\\(?:xspace|hspace\{[^}]*\})\b", " ", plain)
+            plain = plain.rstrip()      # 尾部空格交给下面的分隔符逻辑决定
+            # \\mac 后面**不能**跟 `{`（带参调用由 expand_macro_uses 处理），
+            # 也不能跟字母（避免 \\oursfoo 误伤）
+            pat = re.compile(r"\\" + re.escape(mac) + r"(?![A-Za-z])\*?(?!\s*\{)")
+            # 展开后要不要补空格：LaTeX 里 \\ours: 渲染成 "Coconut:"（冒号前不留空格），
+            # 而 \\ours (Chain) 要留空格 —— 看后一个字符是不是标点；
+            # 源码本来就有空格就别再补一个（否则会变成两个空格）。
+            def _repl(_m, _p=plain, _src=s):
+                rest = _src[_m.end():]
+                nxt = rest.lstrip()
+                if not nxt or nxt[0] in ",.;:!?)]}'":
+                    return _p
+                if rest[:1] in (" ", "\n", "\t"):
+                    return _p
+                return _p + " "
+            new_s, n = pat.subn(_repl, s)
+            if n:
+                changed = True
+                s = new_s
+        if not changed:
+            break
+    return s
+
+
 def expand_macro_uses(s, defs):
     """把 \\mac{arg} 就地展开成 arg（只处理已知的自定义宏）。"""
     if not defs:
@@ -197,14 +248,99 @@ def inline_includes(s, base_dir):
     return s
 
 
+# ── 本地 .sty / .cls 中和 ─────────────────────────────────────
+_PKG_RE = re.compile(r"\\(usepackage|documentclass)(\[[^\]]*\])?\{([^}]*)\}")
+_DEF_NAME_RE = re.compile(
+    r"\\(?:newcommand|renewcommand|DeclareRobustCommand)\s*\{\s*\\([A-Za-z@]+)")
+
+
+def _defined_names(s: str):
+    return {m.group(1) for m in _DEF_NAME_RE.finditer(s)}
+
+
+def _harvest_pkg_macros(path: Path, already: set):
+    """把 .sty/.cls 里的 \\newcommand/\\renewcommand 定义抠出来，返回可重放的定义行。
+
+    只认 newcommand / renewcommand / DeclareRobustCommand —— \\def 不认：
+    ICLR 模板里是 `\\def\\maketitle{...}`，那是**排版命令**，搬进来会把
+    整个题名块替换成一大坨 TeX 源码（比残渣更糟）。
+    """
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    _, defs = extract_macros(text)
+    lines = []
+    for mac, (nargs, body) in defs.items():
+        name = mac.lstrip("\\")
+        if name in already:
+            continue
+        already.add(name)
+        opt = f"[{nargs}]" if nargs and nargs > 1 else ""
+        lines.append(f"\\newcommand{{\\{name}}}{opt}{{{body}}}")
+    return lines
+
+
+def neutralize_local_packages(s: str, base_dir: Path | None):
+    """把指向**本地 .sty/.cls** 的 \\usepackage / \\documentclass 中和掉。
+
+    为什么必须做（2026-11-26 实测，ICLR 模板两篇都中招）：
+      pandoc 会自己去解析 \\usepackage{xxx} 指向的 .sty 文件。
+      iclr2026_conference.sty 里有 `\\def\\maketitle{...}`、各种 `\\def\\section{...}`，
+      pandoc 解析到一半失败 → **题名块被搅乱**，正文开头多出一段
+      「maketitle thanks aketitle」，还会凭空多出一节叫「正文」。
+      2604.12493 / 2603.09184 两篇都这样。
+
+    做法：
+      · 本地存在的 .sty/.cls → 先把里面的宏定义搬进 tex（宏不丢），
+        再把引用换成注释 —— pandoc 就不会再碰这些文件；
+      · 本地不存在的（amsmath 这类系统包）→ 原样留着，
+        pandoc 也找不到它们，不存在风险。
+    """
+    if not base_dir:
+        return s, []
+    already = _defined_names(s)
+    harvested: List[str] = []
+
+    def _one(m):
+        kind, opts, names = m.group(1), m.group(2) or "", m.group(3)
+        keep, notes = [], []
+        for name in [x.strip() for x in names.split(",") if x.strip()]:
+            f = None
+            for cand in (base_dir / f"{name}.sty", base_dir / f"{name}.cls",
+                         base_dir / name / f"{name}.sty", base_dir / name / f"{name}.cls"):
+                if cand.exists():
+                    f = cand
+                    break
+            if f is None:
+                keep.append(name)          # 系统包：pandoc 也找不到，原样留着
+                continue
+            harvested.extend(_harvest_pkg_macros(f, already))
+            notes.append(f"% local package neutralized: {name}")
+        if keep:
+            notes.append(f"\\{kind}{opts}{{{','.join(keep)}}}")
+        return "\n".join(notes)
+
+    s = _PKG_RE.sub(_one, s)
+    if harvested:
+        s = "\n".join(harvested) + "\n" + s
+    return s, harvested
+
+
 def clean_tex(src: Path, out: Path, base_dir: Path | None = None):
     s = src.read_text(encoding="utf-8", errors="replace")
     stats = {}
     s = strip_opt_args(s)
     stats["opt_arg"] = 1
+    # 本地 .sty/.cls 先处理：pandoc 去啃它们会把题名块搅乱
+    s, harvested = neutralize_local_packages(s, base_dir or src.parent)
+    stats["pkg_macros"] = len(harvested)
     s, defs = extract_macros(s)
     stats["macros"] = sorted(defs)
     s = expand_macro_uses(s, defs)
+    # 裸用法（\ours: Chain of Continuous Thought）也必须展开，
+    # 否则 pandoc 会把这个词连同方法名一起吃掉 —— 见 expand_bare_macro_uses 的说明。
+    s = expand_bare_macro_uses(s, defs)
     s = re.sub(r"\\pdfoutput\s*=\s*\d+\s*", "", s)
     s = re.sub(r"\\makeatletter|\\makeatother", "", s)
     # natbib 的 \citet/\citep/\citealt → \cite（引文统一交给 --bibliography）

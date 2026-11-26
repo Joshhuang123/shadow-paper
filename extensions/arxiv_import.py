@@ -271,7 +271,10 @@ def _clean_and_convert(tex_path: Path, workdir: Path, base_dir: Path,
     # ② bib 读不了时不能整篇导入失败：正文才是本体，参考文献可以没有。
     #    → 退回「不带 --citeproc」再跑一遍，正文照常进，refs 为空。
     for _ in range(30):
-        latex_clean.clean_tex(tex_path, clean_path)
+        # base_dir 要传**解包根目录**：本地 .sty/.cls 往往在根上而不是主 tex 旁边，
+        # 不传就找不到 → pandoc 会自己去啃这些 .sty → 题名块被搅乱
+        # （正文开头多出「maketitle thanks aketitle」，2026-11-26 实测）。
+        latex_clean.clean_tex(tex_path, clean_path, base_dir)
         s = clean_path.read_text(encoding="utf-8")
         for mac in unwrap:
             s = latex_clean.expand_named_macro(s, mac)

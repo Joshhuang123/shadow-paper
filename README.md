@@ -361,8 +361,10 @@ stdio JSON-RPC（MCP 标准），和 `~/.semantix/mcp/server.mjs` 同一套写�
 - 阅读器顶栏有「**中文 / 原文**」开关（没有中文版的论文不显示这个按钮）。
 - **检索层是中英同块索引**：每个块索引成「中文译文 + 英文原文」，所以
   中文提问命中中文部分、英文提问命中英文部分 —— 一次提问不必再翻检索词。
-- **公式不译**：`⟦MATH:…⟧` 行内公式占位符在译文里原样、按同样顺序保留，
-  译文和原文的公式**逐个对齐**，点开放大看到的是同一式子。
+- **公式不译**：`⟦MATH:…⟧` 行内公式占位符在译文里原样保留，译文和原文的公式**逐个对齐**，
+  点开放大看到的是同一式子。
+  ⚠️ 校验比的是**多重集**不是顺序：中文语序和英文不同，模型把两个占位符对调位置很正常，
+  占位符自带公式、逐个渲染，顺序不影响正确性（按顺序判会误杀好译文 → 整段变空）。
 - **表格只译图注，表内数字和单元格一律不译** —— 数字不能被改，这是科普内容的底线。
 - 术语全库统一（`extensions/zh.py` 里的术语表）：latent space→潜空间、
   continuous thought→连续思维、pseudo-reasoning→伪推理、inference latency→推理时延…
@@ -401,3 +403,60 @@ print(zh.translate_all(['2412.06769','2506.09985','2604.12493',
 3. **参考文献要可失败。** `\bibliography{xxx}` 会让 pandoc 去解析它写的那个 bib
    （不存在 / 语法读不了 → 整篇导入失败）。现在先把这条命令中和掉，
    bib 由 `--bibliography` 显式给；bib 读不了就退回不带 citeproc，正文照进。
+4. **裸自定义宏不展开 → 整篇论文掉词（2026-11-26）。** 论文写
+   `\newcommand{\ours}{\textsc{Coconut}\xspace}`，正文用 `\section{\ours: Chain of Continuous Thought}`
+   这种**不带花括号**的用法 → pandoc 不认识 `\ours`，把它连同后面的内容一起吃掉 →
+   方法名 "Coconut" 在全文消失，标题变成「: Chain of Continuous Thought」。
+   现在带参、裸用两种宏都展开（裸用还要按后一个字符决定补不补空格）。
+5. **pandoc 自己去啃本地 .sty → 题名块被搅乱（2026-11-26）。**
+   `\usepackage{iclr2026_conference}` 指向本地 .sty 时 pandoc 会尝试解析它，
+   解析到一半失败 → 正文开头多出一段「maketitle thanks aketitle」，还凭空多一节「正文」。
+   现在把 .sty/.cls 里的 `\newcommand/\renewcommand` 搬进 tex，再把引用中和掉
+   （系统包如 amsmath 原样留着，pandoc 找不到它们，无风险）。
+
+> 4、5 这类 bug **不会报错**，只会安静地产出一篇残缺的论文。所以改完导入链路必须抽查三处：
+> 方法名/专有名词的全文出现次数、小节标题有没有「凭空多冒号 / 缺首词」、正文开头有没有 LaTeX 残渣。
+
+### 清洗器/翻译器改了之后，怎么把存量数据刷新（2026-11-26）
+
+```bash
+# 1) 先备份（重建要拿旧译文做复用，不能没有）
+.venv/bin/python -c "
+import sqlite3; src=sqlite3.connect('data/shadow-paper.db')
+dst=sqlite3.connect('../shadow-paper-snapshots/pre-fix.db'); src.backup(dst)"
+
+# 2) 重导（修完导入链路必须重导，否则库里还是旧的残缺版本）
+.venv/bin/python tools/reimport_all.py
+
+# 3) 重建中文版（原文变了哪段就重译哪段，没变的复用旧译文）
+.venv/bin/python tools/rebuild_zh.py
+
+# 4) 重建检索索引（中英同块索引的内容变了）
+.venv/bin/python -c "
+import sys; sys.path.insert(0,'.')
+from extensions import library; library.build_index(force=True)"
+```
+
+第 3 步的复用判据是**英文原文完全一致**才复用旧译文 —— 不是按位置对齐
+（节数一变就全错位：2604.12493 删掉假「正文」节后，后面 52 节整体前移一位）。
+
+### 中文版的质量体检（tools/fix_zh_quality.py）
+
+翻译完**必须体检**，因为下面这些坑都不会报错，只会安静地产出脏内容：
+
+| 症状 | 原因 | 现在的防线 |
+|---|---|---|
+| 译文里混进 `<think>…</think>` | 模型偶尔把思维链吐进 `content` | `_strip_think()` 剥掉，只留最后一段答案 |
+| 译文等于原文 | 模型没翻 | `_looks_untranslated()` 判定失败 → 重译 |
+| 整段译文变空 | 公式占位符校验太严（**按顺序**比，中文语序一换就判死） | 改成**多重集**比对；失败时兜底保留原文 |
+| 方法名被意译（Coconut→椰子） | 标题提示词没写死 | 标题规则：方法名/系统名**原样保留英文，禁止意译** |
+| 列表项没译 | `items` 数组不在「段落」分支里 | `segments()` 统一枚举要翻的单元 |
+| 目录还是英文 | `toc` 是独立数组 | 组装时**按 id 复用小节译文**（零成本） |
+
+```bash
+.venv/bin/python tools/fix_zh_quality.py          # 只体检
+.venv/bin/python tools/fix_zh_quality.py --fix    # 体检 + 只重译脏的
+```
+
+其他工具：`tools/reimport_all.py`（重导全部并报告内容变化）、
+`tools/rebuild_zh.py`（重建中文版）、`tools/probe_llm_raw.py`（看模型原始返回）。

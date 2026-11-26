@@ -23,6 +23,11 @@ def create_app() -> Flask:
     app = Flask(__name__, static_folder=None)
     app.config["JSON_AS_ASCII"] = False
     app.config["MAX_CONTENT_LENGTH"] = 128 * 1024 * 1024
+    # 本地开发用的 app，静态资源**不要缓存**（2026-11-26 实测踩中）：
+    #   改完 web/js/reader.js 后页面还是旧逻辑 —— 因为 HTML 刷新了、JS 被浏览器缓存，
+    #   而「页面上加 ?v=时间戳」只能破 HTML 的缓存，破不了 JS 文件本身的。
+    #   结果是「按钮出现了（新 HTML）但切换不生效（旧 JS）」这种半新半旧状态，最难查。
+    app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
     secret = db.DATA_DIR / ".secret"
     db.DATA_DIR.mkdir(parents=True, exist_ok=True)
     if not secret.exists():
@@ -53,6 +58,18 @@ def create_app() -> Flask:
     @app.route("/static/<path:filename>")
     def static_files(filename):
         return send_from_directory(WEB_DIR, filename)
+
+    # 本地开发用的 app：**所有响应都不许缓存**（2026-11-26 实测踩中）。
+    #   之前只给 /static 加了 no-store，结果 **HTML 本身被浏览器缓存** ——
+    #   页面拿到的是旧 HTML（引的还是没加版本号的 reader.js），
+    #   于是「服务端已是新版、浏览器跑的是旧版」，查起来极难。
+    #   一处 after_request 统一治：HTML / JS / CSS / API 全都不缓存。
+    @app.after_request
+    def _no_store(resp):
+        resp.headers["Cache-Control"] = "no-store, max-age=0, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp
 
     @app.route("/assets/<path:filename>")
     def assets(filename):

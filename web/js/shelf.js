@@ -21,6 +21,10 @@
        列表
        ========================================================== */
 
+    // 语言偏好（服务端按 cookie 判定：默认中文）。
+    // 中文版时卡片主标题用中文，英文原名降为副标题。
+    var shelfLang = 'zh';
+
     function renderPapers(papers) {
         SP.fill(els.grid, []);
 
@@ -49,7 +53,15 @@
             window.location.href = '/read/' + encodeURIComponent(p.id);
         });
 
-        card.appendChild(SP.el('h3', { class: 'sp-paper-title', text: p.title || p.id }));
+        var zhTitle = (p.title_zh || '').trim();
+        var showZh = shelfLang === 'zh' && !!zhTitle;
+        card.appendChild(SP.el('h3', {
+            class: 'sp-paper-title',
+            text: showZh ? zhTitle : (p.title || p.id)
+        }));
+        if (showZh) {
+            card.appendChild(SP.el('p', { class: 'sp-paper-title-en', text: p.title || p.id }));
+        }
 
         var authors = (p.authors || []).join('、');
         card.appendChild(SP.el('p', {
@@ -90,6 +102,7 @@
 
     function loadPapers() {
         return SP.getJSON('/api/papers').then(function (d) {
+            shelfLang = d.lang || 'zh';
             renderPapers(d.papers || []);
         }).catch(function (err) {
             showStatus('读取论文列表失败', err.message, 'error');

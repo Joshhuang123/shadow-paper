@@ -292,8 +292,21 @@ def build_index(force: bool = False) -> Tuple[BM25, List[Passage]]:
                     zh_text = (zblk.get("t") or zblk.get("caption") or "").strip()
                 # 中文在前、英文在后：**中文问题命中中文部分，英文问题命中英文部分**，
                 # 一条 passage 两种语言都能检索到，答案还能给出英文原文依据。
-                body = f"{sec_title}\n{zh_text}\n{text}" if zh_text else f"{sec_title}\n{text}"
-                passages.append(Passage(pid, title, sec_title, sec.get("id", ""), body, kind,
+                # 顺序：中文小节名 → 英文小节名 → 中文正文 → 英文正文。
+                # 英文小节名留在索引里，英文问句才命中得着；中文小节名放最前，
+                # 片段读起来才是中文（出处标签也跟着它是中文）。
+                zh_sec_title = (zsec.get("title") or "").strip()
+                if zh_text:
+                    head = f"{zh_sec_title}\n{sec_title}\n" if zh_sec_title else f"{sec_title}\n"
+                    body = f"{head}{zh_text}\n{text}"
+                else:
+                    body = f"{sec_title}\n{text}"
+                # ⚠️ 出处标签用**中文小节名**（2026-11-26 实测）：
+                #   正文是中文、阅读器的目录也是中文，出处却写英文小节名 →
+                #   用户拿着「Inference Latency」在自己的中文目录里找不到那一节。
+                #   sec_title 仍留英文（标题索引要用它，英文问句才命中）。
+                label = zh_sec_title or sec_title
+                passages.append(Passage(pid, title, label, sec.get("id", ""), body, kind,
                                     sec_title))
         # 再单独给每个章节一条「章节级」条目：
         # 有些问题问的就是某个章节（"它的消融实验怎么做的"），只靠块级条目会漏。

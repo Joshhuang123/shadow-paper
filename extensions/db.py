@@ -180,8 +180,26 @@ def list_papers() -> list:
     for r in rows:
         d = dict(r)
         d["authors"] = json.loads(d.pop("authors_json") or "[]")
+        d["title_zh"] = zh_title_of(d["id"])
         out.append(d)
     return out
+
+
+def zh_title_of(pid: str) -> str:
+    """中文版标题（没有中文版就返回空串）。
+
+    用 json_extract 直接从 zh_json 里取 —— 整份中文版有几百 KB，
+    为了一个标题把 6 篇全解一遍太浪费。
+    """
+    row = get_db().execute(
+        "SELECT json_extract(zh_json, '$.title_zh') FROM papers WHERE id = ?", (pid,)
+    ).fetchone()
+    if not row:
+        return ""
+    try:
+        return row[0] or ""
+    except (IndexError, TypeError):
+        return ""
 
 
 def delete_paper(pid: str) -> bool:

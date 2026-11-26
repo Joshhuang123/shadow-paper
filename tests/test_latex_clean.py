@@ -105,5 +105,81 @@ class TestMacroAt(unittest.TestCase):
         self.assertEqual(latex_clean.macro_at(text, 2, 14), "nameref")
 
 
+class TestBareMacroExpansion(unittest.TestCase):
+    """裸宏（不带花括号的自定义宏）必须展开 —— 2026-11-26 实测踩中。
+
+    真实案例：\\newcommand{\\ours}{\\textsc{Coconut}\\xspace}，
+    源码里写成 \\section{\\ours: Chain of Continuous Thought}。
+    不展开的话 pandoc 不认识 \\ours，会把它连同后面的内容一起吃掉，
+    结果整篇论文里方法名 "Coconut" 消失，标题变成「: Chain of Continuous Thought」。
+    """
+
+    DEFS = {"ours": (1, r"\textsc{Coconut}")}
+
+    def test_bare_use_expanded(self):
+        out = latex_clean.expand_bare_macro_uses(r"\section{\ours: Chain of Continuous Thought}", self.DEFS)
+        self.assertNotIn(r"\ours", out)
+        self.assertIn("Coconut", out)
+
+    def test_no_space_before_punctuation(self):
+        out = latex_clean.expand_bare_macro_uses(r"\ours: Chain", self.DEFS)
+        self.assertNotIn(r"\ours", out)
+        self.assertIn("}: Chain", out)      # 冒号前不留空格
+
+    def test_space_before_bracket(self):
+        out = latex_clean.expand_bare_macro_uses(r"paradigm, \ours (Chain)", self.DEFS)
+        self.assertIn("} (Chain)", out)     # 括号前留一个空格，且不重复
+
+    def test_no_double_space(self):
+        out = latex_clean.expand_bare_macro_uses(r"\ours (Chain)", self.DEFS)
+        self.assertNotIn("  ", out)
+
+    def test_braced_use_left_to_other_handler(self):
+        out = latex_clean.expand_bare_macro_uses(r"\ours{arg}", self.DEFS)
+        self.assertIn(r"\ours{arg}", out)   # 带参调用不归这里管
+
+    def test_prefix_command_not_matched(self):
+        out = latex_clean.expand_bare_macro_uses(r"\oursfoo and \ours", self.DEFS)
+        self.assertIn(r"\oursfoo", out)
+        self.assertNotIn(r"\ours ", out.replace(r"\oursfoo", ""))
+
+
+class TestLocalPackageNeutralization(unittest.TestCase):
+    """本地 .sty/.cls 必须中和 —— 2026-11-26 实测踩中。
+
+    pandoc 会自己去解析 \\usepackage{xxx} 指向的 .sty，解析到一半失败会把
+    **题名块搅乱**：正文开头多出一段「maketitle thanks aketitle」，
+    还凭空多一节叫「正文」（ICLR 模板两篇都中招）。
+    """
+
+    def test_local_sty_neutralized(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            (base / "conf.sty").write_text(
+                r"\def\maketitle{\par}" + "\n" + r"\newcommand{\my}[1]{#1}", encoding="utf-8")
+            s = r"\documentclass{conf}\usepackage{conf}\title{T}\begin{document}x\end{document}"
+            out, harvested = latex_clean.neutralize_local_packages(s, base)
+            self.assertNotIn(r"\usepackage{conf}", out)
+            self.assertIn("local package neutralized", out)
+            self.assertTrue(any("my" in h for h in harvested), "宏定义应该被搬进 tex")
+
+    def test_system_package_kept(self):
+        with tempfile.TemporaryDirectory() as td:
+            s = r"\usepackage{amsmath}\usepackage{graphicx}"
+            out, harvested = latex_clean.neutralize_local_packages(s, Path(td))
+            self.assertIn(r"\usepackage{amsmath}", out)
+            self.assertIn(r"\usepackage{graphicx}", out)
+            self.assertEqual(harvested, [])
+
+    def test_mixed_packages(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            (base / "conf.sty").write_text("x", encoding="utf-8")
+            s = r"\usepackage{conf,amsmath}"
+            out, _ = latex_clean.neutralize_local_packages(s, base)
+            self.assertIn(r"\usepackage{amsmath}", out)
+            self.assertNotIn(r"\usepackage{conf,", out)
+
+
 if __name__ == "__main__":
     unittest.main()

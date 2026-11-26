@@ -522,6 +522,19 @@ body .top-nav .nav-links {
     line-height: 1.2;
     margin: 0 0 var(--space-3);
 }
+/* 英文原名副标题：阅读器题名区 + 书架卡片共用一套字号/颜色 */
+.sp-paper-title-en {
+    font-family: var(--font-ui);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    line-height: 1.45;
+}
+.sp-paper-front .sp-paper-title-en {
+    margin: calc(var(--space-3) * -0.6) 0 var(--space-3);
+}
+.sp-paper-card .sp-paper-title-en {
+    margin: 2px 0 var(--space-2);
+}
 .sp-paper-authors-line {
     font-family: var(--font-ui);
     font-size: var(--text-sm);

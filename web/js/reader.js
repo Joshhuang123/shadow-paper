@@ -170,14 +170,26 @@
 
     /** 顶栏 + 正文开头的题名区。 */
     function renderHead(paper) {
-        els.title.textContent = paper.title || paper.id;
-        document.title = (paper.title || paper.id) + ' · Shadow Paper';
+        // 中文版：主标题用中文（title_zh），英文原名降为副标题。
+        // 英文原文：主标题就是英文。
+        // ⚠ 论文标题是专有名词，所以**中文版里两个都要有** ——
+        //   只剩中文会搜不到原论文，只剩英文又不算「中文版」。
+        var isZh = paper.lang === 'zh';
+        var titleZh = (paper.title_zh || '').trim();
+        var mainTitle = (isZh && titleZh) ? titleZh : (paper.title || paper.id);
+        var subTitle = (isZh && titleZh && paper.title) ? paper.title : '';
+
+        els.title.textContent = mainTitle;
+        document.title = mainTitle + ' · Shadow Paper';
 
         var authors = (paper.authors || []).join('、');
         els.authors.textContent = authors;
 
         var front = SP.el('div', { class: 'sp-paper-front' });
-        front.appendChild(SP.el('h1', { text: paper.title || paper.id }));
+        front.appendChild(SP.el('h1', { text: mainTitle }));
+        if (subTitle) {
+            front.appendChild(SP.el('p', { class: 'sp-paper-title-en', text: subTitle }));
+        }
         front.appendChild(SP.el('p', { class: 'sp-paper-authors-line', text: authors || '未标注作者' }));
 
         var venue = SP.el('p', { class: 'sp-paper-venue' });
@@ -190,11 +202,14 @@
         venue.innerHTML = bits.join(' · ');
         front.appendChild(venue);
 
-        if (paper.abstract) {
+        // 摘要：中文版优先用 abstract_zh，没有就退回英文摘要
+        var abstract = (isZh && (paper.abstract_zh || '').trim())
+            ? paper.abstract_zh : (paper.abstract || '');
+        if (abstract) {
             var abs = SP.el('div', { class: 'sp-paper-abstract' });
-            abs.appendChild(SP.el('span', { class: 'sp-eyebrow', text: 'Abstract' }));
+            abs.appendChild(SP.el('span', { class: 'sp-eyebrow', text: isZh ? '摘要' : 'Abstract' }));
             abs.appendChild(SP.el('p', { style: 'margin:0' }));
-            abs.lastChild.appendChild(SP.buildTextNodes(paper.abstract));
+            abs.lastChild.appendChild(SP.buildTextNodes(abstract));
             front.appendChild(abs);
         }
 
@@ -1076,8 +1091,11 @@
     function toggleLang() {
         if (!state.hasZh) return;
         state.lang = state.lang === 'zh' ? 'en' : 'zh';
-        var y = window.scrollY;
-        loadPaper().then(function () { window.scrollTo(0, y); });
+        // 偏好记在服务端 cookie 里：跨论文记住，而且不依赖前端拼 URL
+        // （前端加 ?lang= 会被浏览器 JS 缓存卡住 —— 改完 reader.js 还在跑旧版）。
+        SP.postJSON('/api/paper/lang', { lang: state.lang })
+            .catch(function () {})
+            .then(function () { window.location.reload(); });
     }
 
     window.toggleLang = toggleLang;
