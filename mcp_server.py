@@ -68,12 +68,15 @@ def _tools() -> list:
         },
         {
             "name": "get_paper",
-            "description": "取一篇论文（或它某一节）的正文。paper_id 用 arXiv 编号（如 2412.06769）。",
+            "description": "取一篇论文（或它某一节）的正文。paper_id 用 arXiv 编号（如 2412.06769）。"
+                           "lang=zh 取中文版（已译的论文都有中文版）。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "paper_id": {"type": "string"},
                     "section": {"type": "string", "description": "章节名片段（可选）"},
+                    "lang": {"type": "string", "enum": ["zh", "en"], "default": "zh",
+                             "description": "zh=中文版，en=英文原文。默认中文。"},
                     "max_chars": {"type": "integer", "default": 12000},
                 },
                 "required": ["paper_id"],
@@ -101,7 +104,9 @@ def _call(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
     from extensions import library
 
     if name == "list_papers":
-        return library.library_stats()
+        st = library.library_stats()
+        st["zh_papers"] = sum(1 for t in st.get("titles", []) if t.get("has_zh"))
+        return st
     if name == "search_papers":
         hits = library.search(args.get("query") or "", limit=int(args.get("limit") or 8),
                               paper_id=args.get("paper_id") or None)
@@ -109,7 +114,8 @@ def _call(name: str, args: Dict[str, Any]) -> Dict[str, Any]:
     if name == "get_paper":
         return library.get_paper(args.get("paper_id") or "",
                                  section=args.get("section") or None,
-                                 max_chars=int(args.get("max_chars") or 12000))
+                                 max_chars=int(args.get("max_chars") or 12000),
+                                 lang=args.get("lang") or "zh")
     if name == "ask_library":
         return library.ask(args.get("question") or "", top_k=int(args.get("top_k") or 8),
                             paper_id=args.get("paper_id") or None)

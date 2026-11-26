@@ -58,6 +58,13 @@
         }));
 
         var meta = SP.el('div', { class: 'sp-paper-meta' });
+        if (p.has_zh) {
+            // 中文版标记：这篇已经有中文版，点进去可以切中文/原文
+            meta.appendChild(SP.el('span', {
+                class: 'sp-paper-zh',
+                title: '这篇有中文版，进入后可切换中文/原文'
+            }, ['中文版']));
+        }
         meta.appendChild(SP.el('span', { html: '<b>' + SP.fmtInt(p.n_sections) + '</b> 节' }));
         meta.appendChild(SP.el('span', { html: '<b>' + SP.fmtInt(p.n_words) + '</b> 词' }));
         meta.appendChild(SP.el('span', { html: '<b>' + SP.fmtInt(p.n_blocks) + '</b> 块' }));

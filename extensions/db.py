@@ -30,8 +30,9 @@ CREATE TABLE IF NOT EXISTS papers (
     n_blocks     INTEGER NOT NULL DEFAULT 0,
     n_words      INTEGER NOT NULL DEFAULT 0,
     data_json    TEXT NOT NULL,
+    zh_json      TEXT,                 -- 中文版（同一篇的译文，不是另一篇）
     imported_at  TEXT NOT NULL,
-    updated_at   TEXT NOT NULL
+    updated_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_papers_updated ON papers(updated_at);
 
@@ -87,9 +88,43 @@ def get_db():
     return conn
 
 
+def _ensure_zh_column():
+    """老库加 zh_json 列（ALTER TABLE 不能写进 CREATE TABLE IF NOT EXISTS）。"""
+    cols = {r[1] for r in get_db().execute("PRAGMA table_info(papers)")}
+    if "zh_json" not in cols:
+        get_db().execute("ALTER TABLE papers ADD COLUMN zh_json TEXT")
+
+
+def save_zh_paper(pid: str, doc: dict) -> bool:
+    """存中文版。存进同一篇的 zh_json —— 书架不出现重复条目，原文永远在。"""
+    import time
+    now = time.strftime("%Y-%m-%dT%H:%M:%S")
+    get_db().execute(
+        "UPDATE papers SET zh_json = ?, updated_at = ? WHERE id = ?",
+        (json.dumps(doc, ensure_ascii=False), now, pid),
+    )
+    return True
+
+
+def load_zh_paper(pid: str):
+    """取中文版；没译过就返回 None（调用方回落到英文）。"""
+    row = get_db().execute("SELECT zh_json FROM papers WHERE id = ?", (pid,)).fetchone()
+    if not row or not row["zh_json"]:
+        return None
+    try:
+        return json.loads(row["zh_json"])
+    except json.JSONDecodeError:
+        return None
+
+
+def has_zh(pid: str) -> bool:
+    return load_zh_paper(pid) is not None
+
+
 def init_db():
     conn = get_db()
     conn.executescript(SCHEMA)
+    _ensure_zh_column()
     return conn
 
 

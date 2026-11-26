@@ -16,6 +16,9 @@
     var state = {
         pid: '',
         paper: null,
+        lang: 'zh',              // 当前显示语言：zh 中文版 / en 英文原文
+        hasZh: false,            // 这篇有没有中文版
+        paperLang: 'en',
         sections: [],          // {id, title, level, el, blocks:[]}
         tocItems: [],          // 目录按钮
         activeToc: null,
@@ -149,11 +152,15 @@
        ========================================================== */
 
     function loadPaper() {
-        SP.getJSON('/api/paper/' + encodeURIComponent(state.pid)).then(function (d) {
+        var q = state.lang === 'zh' ? '?lang=zh' : '';
+        SP.getJSON('/api/paper/' + encodeURIComponent(state.pid) + q).then(function (d) {
             state.paper = d.paper;
+            state.hasZh = !!d.has_zh;
+            state.paperLang = d.lang || 'en';
             renderHead(d.paper);
             renderToc(d.paper);
             renderBody(d.paper);
+            syncLangBtn();
             state.paperReady = true;
             maybeRenderMath();
         }).catch(function (err) {
@@ -1051,6 +1058,29 @@
        动作(dispatcher.js 路由)
        ========================================================== */
 
+    /** 语言开关：中文版 / 英文原文。切换时整篇重取（服务端按 lang 返回对应版本）。 */
+    function syncLangBtn() {
+        // 两个入口（顶栏 + 底部条）一起同步：窄屏时顶栏那个会被响应式藏掉
+        var btns = document.querySelectorAll('.sp-lang-btn');
+        if (!btns.length) return;
+        for (var i = 0; i < btns.length; i++) {
+            var btn = btns[i];
+            if (!state.hasZh) { btn.hidden = true; continue; }
+            btn.hidden = false;
+            var lab = btn.querySelector('.sp-lang-label');
+            if (lab) lab.textContent = state.lang === 'zh' ? '中文' : '原文';
+            btn.setAttribute('aria-label', state.lang === 'zh' ? '切到英文原文' : '切到中文版');
+        }
+    }
+
+    function toggleLang() {
+        if (!state.hasZh) return;
+        state.lang = state.lang === 'zh' ? 'en' : 'zh';
+        var y = window.scrollY;
+        loadPaper().then(function () { window.scrollTo(0, y); });
+    }
+
+    window.toggleLang = toggleLang;
     window.toggleToc = toggleToc;
     window.togglePanel = togglePanel;
     window.closeDrawers = closeDrawers;

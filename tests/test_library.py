@@ -97,5 +97,82 @@ class TestSearchAgainstRealLibrary(unittest.TestCase):
         self.assertGreater(st["passages"], 0)
 
 
+
+
+class TestChineseVersion(unittest.TestCase):
+    """中文版的回归测试：提示词、清洗、存储、双语索引。"""
+
+    def test_math_placeholders_must_match(self):
+        """译文里的公式占位符必须和原文一一对应 —— 对不上就是译文坏了。"""
+        from extensions import zh
+        src = "the sequence ⟦MATH:x = (x_1, ..., x_T)⟧⟧ follows."
+        self.assertEqual(len(zh._math_seq(src)), 1)
+        self.assertEqual(zh._math_seq(src), zh._math_seq(src))
+        self.assertEqual(zh._math_seq("没有公式"), [])
+
+    def test_number_extraction_ignores_math(self):
+        from extensions import zh
+        # ⟦MATH:…⟧ 里的数字不算正文数字
+        self.assertEqual(zh._nums("值是 3.5 ⟦MATH:x_1⟧⟧"), ["3.5"])
+
+    def test_translate_text_rejects_broken_math(self):
+        """模型吐了少了公式占位符 → 必须判失败、让调用方重试，不能当成功。"""
+        from extensions import zh
+        orig = zh._call_llm
+        try:
+            zh._call_llm = lambda *a, **k: ("译文里没有公式占位符", None)
+            zh_text, err, _info = zh.translate_text("a ⟦MATH:x⟧⟧ b")
+            self.assertIsNone(zh_text)
+            self.assertIn("公式", err)
+        finally:
+            zh._call_llm = orig
+
+    def test_translate_text_accepts_good_output(self):
+        from extensions import zh
+        orig = zh._call_llm
+        try:
+            zh._call_llm = lambda *a, **k: ("译文里的 ⟦MATH:x⟧⟧ 保留", None)
+            zh_text, err, _info = zh.translate_text("a ⟦MATH:x⟧⟧ b")
+            self.assertEqual(err, None)
+            self.assertIn("⟦MATH:x⟧⟧", zh_text)
+        finally:
+            zh._call_llm = orig
+
+    def test_context_never_lands_in_translation(self):
+        """章节语境是背景，**不能出现在译文里**（2026-11-26 实测踩中过）。"""
+        from extensions import zh
+        orig = zh._call_llm
+        seen = {}
+
+        def fake(prompt, *a, **k):
+            seen["ctx"] = k.get("context") or (a[0] if a else "")
+            # 模拟模型把语境复读出来
+            return ("（这一段所在的章节：总体结果）\n\n总体结果翻译", None)
+
+        try:
+            zh._call_llm = fake
+            zh_text, err, _info = zh.translate_text("some text", context="总体结果")
+            self.assertEqual(err, None)
+            self.assertNotIn("所在章节", zh_text)
+        finally:
+            zh._call_llm = orig
+
+    def test_bilingual_index_contains_both_languages(self):
+        """有中文版时，索引文本里中英都要在 —— 中文问句和英文问句都得能命中。"""
+        library.build_index(force=True)
+        hits = library.search("latent tree search breadth first", limit=8)
+        en_ok = any("latent" in h["text"].lower() for h in hits)
+        self.assertTrue(en_ok, "英文检索应该命中")
+
+    def test_chinese_paper_loadable(self):
+        from extensions import db
+        pid = "2412.06769"
+        if not db.has_zh(pid):
+            raise unittest.SkipTest("这篇还没译完")
+        zh_doc = db.load_zh_paper(pid)
+        self.assertTrue(zh_doc["sections"])
+        self.assertEqual(len(zh_doc["sections"]), len(db.load_paper(pid)["sections"]))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

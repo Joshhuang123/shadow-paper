@@ -115,14 +115,25 @@ def register_routes(app):
 
     @app.route("/api/papers")
     def papers_list():
-        return jsonify({"success": True, "papers": db.list_papers()})
+        papers = db.list_papers()
+        for row in papers:
+            row["has_zh"] = db.has_zh(row["id"])
+        return jsonify({"success": True, "papers": papers})
 
     @app.route("/api/paper/<pid>")
     def paper_detail(pid):
         doc = db.load_paper(pid)
         if not doc:
             return jsonify({"success": False, "error": "没有这篇论文"}), 404
-        return jsonify({"success": True, "paper": doc})
+        # ?lang=zh 取中文版（没译过就自动回落英文）。
+        # has_zh 一起返回，前端据此决定「中文/原文」开关给不给点。
+        lang = (request.args.get("lang") or "").lower()
+        zh_doc = db.load_zh_paper(pid)
+        if lang in ("zh", "cn", "zh-cn") and zh_doc:
+            return jsonify({"success": True, "paper": zh_doc, "lang": "zh",
+                            "has_zh": True, "title_en": doc.get("title")})
+        return jsonify({"success": True, "paper": doc, "lang": "en",
+                        "has_zh": bool(zh_doc), "title_zh": (zh_doc or {}).get("title_zh")})
 
     @app.route("/api/paper/<pid>", methods=["DELETE"])
     def paper_delete(pid):

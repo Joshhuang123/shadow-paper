@@ -1309,3 +1309,13 @@ html {
     font-size: var(--text-xs, 12px);
     color: var(--text-secondary);
 }
+
+/* 书架卡片上的「中文版」标记 */
+.sp-paper-zh {
+    color: var(--accent, var(--text-primary));
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0 8px;
+    font-size: var(--text-xs, 12px);
+    line-height: 1.6;
+}
