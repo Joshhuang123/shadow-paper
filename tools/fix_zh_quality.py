@@ -28,8 +28,11 @@ _BAD_TITLE_RE = re.compile(r"椰子|闭环语义|闭合推断|词元嵌入器")
 
 # 参考文献/致谢这类段落**本来就该是英文**（作者名、论文标题、期刊名），
 # 不参与"没翻"判定 —— 否则整段参考文献都会被误报。
+# ⚠️ 这里**不能**把 acknowledgements 放进跳过列表（2026-11-26 实测踩中）：
+#   "Acknowledgement" 这一节本身该译成「致谢」，跳过它就永远译不到；
+#   参考文献条目是**块级**特征（作者 + 年份），用 _is_reference_text 逐块认就行。
 _SKIP_SECTION_RE = re.compile(
-    r"^\s*(references?|bibliography|acknowledg\w*|参考文献|致谢|附录|appendix)\b", re.I)
+    r"^\s*(references?|bibliography|参考文献|附录|appendix)\b", re.I)
 
 # 参考文献条目长这样："Achiam, Josh, Steven Adler, Sandhini Agarwal, et al. 2023. “Gpt-4 …"
 # ⚠️ LaTeX 的 bibliography 排在最后一个 \section 之后 → 会被塞进**最后一节**里，
@@ -88,6 +91,13 @@ def is_bad(en, cn, kind):
         return "思维链残留"
     if kind == "title" and _BAD_TITLE_RE.search(cn):
         return "专有名词被意译"
+    # ⚠️ 标题单独判「原文原样」：
+    #   通用判据要求原文 ≥40 字符才查「原文原句」，
+    #   而标题大多只有 10–30 字符 → 判据全都不触发 → **未译的标题被放过**。
+    #   实测「Limitations」「Experiments」这类短标题整批没翻（35 个）。
+    #   判据：译文 == 原文，且原文里有**小写英文单词**（不是纯缩写/专有名词）。
+    if kind == "title" and cn.strip() == en.strip() and re.search(r"[a-z]", en):
+        return "标题没翻"
     why = zh._looks_untranslated(en, cn)
     if why:
         return why
@@ -136,6 +146,22 @@ def clean_junk_keys(doc):
     return n
 
 
+def sync_toc(doc):
+    """目录条目按 id 复用小节标题（和 zh.assemble 同一套规则）。
+
+    ⚠️ 不做这一步，目录就会**停在旧的英文标题**上：
+      修复器改的是 sections[].title，toc 是独立数组 —— 改一处不动另一处，
+      左边目录和正文标题对不上（2026-11-26 实测）。
+    """
+    by_id = {s.get("id"): s.get("title") for s in doc.get("sections", [])}
+    n = 0
+    for t in doc.get("toc", []):
+        if t.get("id") in by_id and t.get("title") != by_id[t["id"]]:
+            t["title"] = by_id[t["id"]]
+            n += 1
+    return n
+
+
 def main():
     fix = "--fix" in sys.argv
     pids = [a for a in sys.argv[1:] if not a.startswith("--")] or ALL_PIDS
@@ -156,7 +182,18 @@ def main():
         print(f"=== {pid}: {len(pairs)} 个单元，{len(bad)} 个有问题")
         for path, e, c, kind, ctx, why in bad[:8]:
             print(f"    [{path}] {why}｜英: {e[:50]!r}｜中: {c[:50]!r}")
-        if not bad or not fix:
+        # 目录同步**无条件做**：就算没有脏段落，目录也可能停在旧标题上
+        # （小节标题改了、toc 没改）。所以这条不放在「有脏段落才继续」的分支里。
+        toc_n = sync_toc(zh_doc)
+        junk = clean_junk_keys(zh_doc)
+        if not bad:
+            if toc_n or junk:
+                db.save_zh_paper(pid, zh_doc)
+                (zh.CACHE_DIR / f"{pid}.json").write_text(
+                    json.dumps(zh_doc, ensure_ascii=False), encoding="utf-8")
+                print(f"    ✓ 无脏段落；同步目录 {toc_n} 条、清垃圾键 {junk} 个")
+            continue
+        if not fix:
             continue
         # 重译
         results = {}
@@ -174,17 +211,18 @@ def main():
 
         with ThreadPoolExecutor(max_workers=zh.CONCURRENCY) as ex:
             list(ex.map(work, bad))
-        junk = clean_junk_keys(zh_doc)
+        toc_n += sync_toc(zh_doc)
         ok = 0
         for path, e, _c, kind, ctx, _why in bad:
             out = results.get(path)
             if out:
                 set_by_path(zh_doc, path, out)
                 ok += 1
+        toc_n += sync_toc(zh_doc)      # 改完标题再同步一次
         db.save_zh_paper(pid, zh_doc)
         (zh.CACHE_DIR / f"{pid}.json").write_text(
             json.dumps(zh_doc, ensure_ascii=False), encoding="utf-8")
-        print(f"    ✓ 修好 {ok}/{len(bad)}（清垃圾键 {junk} 个）")
+        print(f"    ✓ 修好 {ok}/{len(bad)}（清垃圾键 {junk}，同步目录 {toc_n} 条）")
     print(f"\n合计问题单元：{total_bad}")
 
 

@@ -261,6 +261,16 @@ def translate_text(text: str, context: str = "", kind: str = "text") -> Tuple[Op
     #    也当成正文给翻了，章节标题里就多出这一行提示词）。
     if kind == "title":
         out, err = _call_llm(f"章节标题：{text}", context=context, title_mode=True)
+        # 模型有时把标题**原样返回**（"Qwen-3 Transcoders" → "Qwen-3 Transcoders"），
+        # 原因多半是提示词里"方法名保留英文"这条被过度套用。
+        # → 追加一句提醒再试一次，只认第二次的结果。
+        if out and out.strip() == text.strip():
+            out2, err2 = _call_llm(
+                f"章节标题：{text}\n\n（上一次你把标题原样返回了英文。"
+                f"通用词必须译成中文，只有方法名/型号（如 Qwen-3、Coconut）保留英文。）",
+                context=context, title_mode=True)
+            if out2 and out2.strip() != text.strip():
+                out, err = out2, err2
     else:
         out, err = _call_llm(text, context=context)
     if err or not out:
