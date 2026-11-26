@@ -10,6 +10,7 @@
 幂等：跑第二遍不会重复调用（已正确的标题会跳过）。
 """
 import json
+import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -19,7 +20,34 @@ sys.path.insert(0, str(HERE))
 
 from extensions import db, zh  # noqa: E402
 
-BAD = ("（无正文）", "(empty)", "(无内容)", "(空)", "")
+ALL = "--all" in sys.argv          # --all：所有标题都重译（白名单式挑错会漏）
+ARGS = [a for a in sys.argv[1:] if not a.startswith("--")]
+
+BAD = ("（无正文）", "(empty)", "(无内容)", "(空)", "（无）", "（无译文）", "(无)",
+        "未译", "翻译失败", "正文", "（翻译失败）")
+
+
+def _is_bad(cur: str, en_title: str) -> bool:
+    """这个中文标题是不是「占位/翻坏了」。
+
+    2026-11-26 实测踩到：短标题用正文那套提示词时，模型会回
+    「（无正文）」「(empty)」「（无）」「（无译文）」等等各种花样，
+    写死一个白名单必然漏 —— 改用「短 + 含可疑词」判定。
+    """
+    c = (cur or "").strip()
+    if not c:
+        return True
+    if c in BAD:
+        return True
+    if len(c) <= 12 and re.search(r"无正文|无译文|empty|未译|翻译失败|^\W*$|^[（(]无[）)]$", c):
+        return True
+    return False
+
+
+def _only_math(t: str) -> bool:
+    """标题只是一个公式占位符 —— 译它没意义，原样留着。"""
+    stripped = re.sub(r"\s+", "", t or "")
+    return bool(stripped) and set(stripped) <= set("⟦MATH:⟧()[]{}^_ ")
 
 
 def fix_one(pid: str) -> dict:
@@ -38,8 +66,10 @@ def fix_one(pid: str) -> dict:
         cur = (zh_secs[si].get("title") or "").strip()
         if not en_title or len(en_title) < 2:
             continue
-        if cur and cur not in BAD and cur != en_title:
-            continue                      # 已经译好了，跳过
+        if _only_math(en_title):
+            continue                      # 只有公式的标题不译
+        if not ALL and cur and not _is_bad(cur, en_title) and cur != en_title:
+            continue                      # 已经译好了，跳过（--all 模式不跳过）
         jobs.append((si, en_title))
 
     if not jobs:
@@ -53,7 +83,7 @@ def fix_one(pid: str) -> dict:
     fixed = 0
     with ThreadPoolExecutor(max_workers=zh.CONCURRENCY) as ex:
         for si, en_title, out, err in ex.map(work, jobs):
-            if out and out not in BAD:
+            if out and not _is_bad(out, en_title):
                 zh_secs[si]["title"] = out
                 fixed += 1
             else:
@@ -67,7 +97,7 @@ def fix_one(pid: str) -> dict:
 
 
 def main() -> int:
-    pids = sys.argv[1:] or [r["id"] for r in db.list_papers()]
+    pids = ARGS or [r["id"] for r in db.list_papers()]
     total = 0
     for pid in pids:
         r = fix_one(pid)

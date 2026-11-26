@@ -208,11 +208,13 @@ class BM25:
 
 # ── 索引 ───────────────────────────────────────────────────────────────
 class Passage:
-    __slots__ = ("pid", "title", "section", "section_id", "text", "kind")
+    __slots__ = ("pid", "title", "section", "section_id", "text", "kind", "sec_title")
 
-    def __init__(self, pid: str, title: str, section: str, section_id: str, text: str, kind: str):
+    def __init__(self, pid: str, title: str, section: str, section_id: str, text: str, kind: str,
+                 sec_title: str = ""):
         self.pid, self.title, self.section, self.section_id = pid, title, section, section_id
         self.text, self.kind = text, kind
+        self.sec_title = sec_title or section
 
     def as_dict(self, snippet: str = "") -> Dict[str, Any]:
         return {
@@ -226,6 +228,7 @@ class Passage:
 
 
 _INDEX: Optional[BM25] = None
+_TITLE_INDEX: Optional[BM25] = None
 _PASSAGES: List[Passage] = []
 
 
@@ -290,19 +293,25 @@ def build_index(force: bool = False) -> Tuple[BM25, List[Passage]]:
                 # 中文在前、英文在后：**中文问题命中中文部分，英文问题命中英文部分**，
                 # 一条 passage 两种语言都能检索到，答案还能给出英文原文依据。
                 body = f"{sec_title}\n{zh_text}\n{text}" if zh_text else f"{sec_title}\n{text}"
-                passages.append(Passage(pid, title, sec_title, sec.get("id", ""), body, kind))
+                passages.append(Passage(pid, title, sec_title, sec.get("id", ""), body, kind,
+                                    sec_title))
         # 再单独给每个章节一条「章节级」条目：
         # 有些问题问的就是某个章节（"它的消融实验怎么做的"），只靠块级条目会漏。
         for si, sec in enumerate(en_secs):
             t = (sec.get("title") or "").strip()
             if len(t) >= 3:
-                passages.append(Passage(pid, title, t, sec.get("id", ""), t, "head"))
+                passages.append(Passage(pid, title, t, sec.get("id", ""), t, "head", t))
                 if si < len(zh_secs):
                     zt = (zh_secs[si].get("title") or "").strip()
                     if zt and zt != t:
-                        passages.append(Passage(pid, title, zt, sec.get("id", ""), zt, "head"))
+                        passages.append(Passage(pid, title, zt, sec.get("id", ""), zt, "head", zt))
     _PASSAGES = passages
     _INDEX = BM25([tokenize(p.text) for p in passages])
+    # 标题单独一份索引（BM25F 思路）：
+    #   「Coconut 相比 CoT 快多少」—— "Coconut" 在**参考文献**里出现几十次，
+    #   和正文同权时那一节稳赢，真正写着 Clock-Time 的那一节反而进不了前列。
+    #   标题单独算一份、权重更高，命中「小节标题」的排序才符合直觉。
+    _TITLE_INDEX = BM25([tokenize(p.sec_title) for p in passages])
     return _INDEX, _PASSAGES
 
 
@@ -342,6 +351,9 @@ def search(query: str, limit: int = 8, paper_id: Optional[str] = None) -> List[D
         if paper_id and p.pid != paper_id:
             continue
         s = idx.score(qt, i)
+        if _TITLE_INDEX is not None:
+            # 标题命中的权重更高（BM25F 思路）
+            s += 3.0 * _TITLE_INDEX.score(qt, i)
         if s > 0:
             scored.append((s, i))
     scored.sort(key=lambda x: -x[0])
@@ -504,8 +516,13 @@ def ask(question: str, top_k: int = 8, paper_id: Optional[str] = None) -> Dict[s
     """
     hits = search(question, limit=top_k, paper_id=paper_id)
     expanded = ""
-    # 中文问句 / 检索不到 → 先扩一次检索词再搜
-    if not hits or re.search(r"[\u4e00-\u9fff]", question):
+    # 先扩一次检索词再搜 —— 但**只在检索弱的时候**：
+    #   有了中文版之后，中文提问常常第一轮就命中得很准
+    #   （实测「推理速度有多快」→ 54 分、「潜空间树搜索」→ 59 分），
+    #   这时再翻一次检索词纯属多花一次模型调用。
+    #   阈值：最高分 ≥12 就算命中得实，不翻。
+    strong = bool(hits) and hits[0]["score"] >= 12
+    if not strong:
         expanded = _expand_query(question)
         if expanded:
             more = search(expanded, limit=top_k, paper_id=paper_id)
