@@ -214,6 +214,16 @@ def _call_llm(prompt: str, max_tokens: int = 3000, retries: int = 4,
             choice = (data.get("choices") or [{}])[0]
             msg = choice.get("message") or {}
             content = msg.get("content")
+            # ⚠️ finish_reason=length → **输出被 max_tokens 截断了**（2026-11-27 实测）：
+            #   M3 系列的**思考 token 也算在 max_tokens 里** → 长文本的思考把预算吃光，
+            #   正文只吐一半（"…就已" 这种戛然而止），而 content 非空 → 之前当成成功收下了。
+            #   → 判成失败 + 加预算重来。
+            if choice.get("finish_reason") == "length":
+                last = "输出被 max_tokens 截断"
+                if max_tokens < 24000:
+                    body["max_tokens"] = max_tokens = min(24000, int(max_tokens * 2.5) + 2000)
+                    continue
+                return "", last
             if content:
                 # ⚠ 模型偶尔把思维链整块吐进 content（2026-11-26 实测踩中，
                 #   中文摘要变成「半截译文 + 英文原文 + think 尾巴 + 完整译文」），
@@ -271,9 +281,13 @@ def translate_text(text: str, context: str = "", kind: str = "text",
     if nudge:
         hint = ("\n\n（上一次你把原文原样返回了。这次必须译成中文，"
                 "专有名词保留英文、其余部分都要译。）")
+    # ⚠️ 预算要**随输入长度放大**（2026-11-27 实测）：
+    #   固定 3000 时，1900 字符的摘要翻译到一半被截断（思考 + 正文一起算预算）。
+    #   中文 ≈ 英文的 0.4 倍字符数，给足余量。
+    budget = max(3000, int(len(text) * 1.6) + 2500)
     if kind == "title":
         out, err = _call_llm(f"章节标题：{text}{hint}", context=context, title_mode=True,
-                             temperature=temperature)
+                             temperature=temperature, max_tokens=budget)
         # 模型有时把标题**原样返回**（"Qwen-3 Transcoders" → "Qwen-3 Transcoders"），
         # 原因多半是提示词里"方法名保留英文"这条被过度套用。
         # → 追加一句提醒再试一次，只认第二次的结果。
@@ -285,7 +299,8 @@ def translate_text(text: str, context: str = "", kind: str = "text",
             if out2 and out2.strip() != text.strip():
                 out, err = out2, err2
     else:
-        out, err = _call_llm(text + hint, context=context, temperature=temperature)
+        out, err = _call_llm(text + hint, context=context, temperature=temperature,
+                             max_tokens=budget)
     if err or not out:
         return None, err or "空输出", {}
     out = out.strip()

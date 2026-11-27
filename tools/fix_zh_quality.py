@@ -112,9 +112,12 @@ def is_bad(en, cn, kind):
         return "思维链残留"
     if kind == "title" and _BAD_TITLE_RE.search(cn):
         return "专有名词被意译"
-    # ⚠️ 单个词的标题是**专有名词/基准名**（AdvBench、PlanBench、GPQA-Diamond…），
-    #    保留英文是对的 → 不判、不翻（翻了反而变成"对抗性基准"这种半吊子）。
-    if kind == "title" and len(cn.split()) == 1 and re.match(r"^[A-Za-z][A-Za-z0-9\-]*\.?$", cn.strip()):
+    # ⚠️ **CamelCase 的单词**是专有名词/基准名（AdvBench、PlanBench、DocSweep…），
+    #    保留英文是对的 → 不判、不翻（翻了会变成"对抗性基准"这种半吊子）。
+    #    ⚠️ 判据不能是"单个词" —— "Experiments"/"Dataset"/"Baselines" 也是单个词，
+    #    但它们是普通词、**该翻**。真正的区别是**中间有大写**（CamelCase）。
+    t = cn.strip().rstrip(".")
+    if kind == "title" and " " not in t and re.match(r"^[A-Z][a-z]*[A-Z]", t):
         return None
     # ⚠️ 标题单独判「原文原样」：
     #   通用判据要求原文 ≥40 字符才查「原文原句」，

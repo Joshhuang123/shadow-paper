@@ -89,8 +89,11 @@ def main():
                 changed += 1
 
         # 2) 摘要（被截断过的也重填：半截摘要比英文摘要更糟）
+        # 半截摘要的判据**不能看字数比例** —— 中文本来就比英文紧凑
+        # （1253 字符英文 → 400 字符中文是正常的），比例低≠被截断。
+        # 真正的判据是「结尾是不是完整的句子」。
         abs_zh = (z.get("abstract_zh") or "").strip()
-        if abs_zh and len(abs_zh) < len(en.get("abstract") or "") * 0.75:
+        if abs_zh and abs_zh[-1] not in "。！？!?…":
             z["abstract_zh"] = ""
             marked.discard("abstract_zh")
         if not (z.get("abstract_zh") or "").strip():
