@@ -511,6 +511,23 @@ def _sections_from_ast(blocks, base_dir: Path, asset_dir: Path, paper_id: str):
             sections.append(cur)
             toc.append({"id": cur["id"], "title": cur["title"], "level": 1})
         cur["blocks"].extend(_blocks_from_ast([b], base_dir, asset_dir, paper_id))
+    # 去掉**空节**并把 id 重排成连续的 s1..sN。
+    # 为什么要（2026-11-27 实测，2611.32606）：
+    #   切掉前言后，第一个块可能是个空段 → 留下一节 0 块的「正文」，
+    #   目录里多一条点进去什么都没有的条目。
+    #   而重排 id 是必须的 —— 空节被删后 id 会断号，
+    #   而「目录按 id 复用小节译文」靠的就是 id 对得上。
+    kept = [s for s in sections if s.get("blocks")]
+    if len(kept) != len(sections):
+        keep_ids = {id(s) for s in kept}
+        toc = [t for t, s in zip(toc, sections) if id(s) in keep_ids]
+        sections = kept
+        for i, s in enumerate(sections, 1):
+            old_id = s.get("id")
+            s["id"] = f"s{i}"
+            for t in toc:
+                if t.get("id") == old_id:
+                    t["id"] = s["id"]
     return sections, toc
 
 

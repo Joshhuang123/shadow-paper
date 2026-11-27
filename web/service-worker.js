@@ -5,13 +5,14 @@
 //   · 预缓存清单换成论文版的页面与脚本(/tutor /grammar /stats 这些英语页没有了)
 //   · 加上 KaTeX CDN —— 公式渲染要它,离线时也得能用
 //   · CACHE_NAME 从 shadow-ebook-* 改成 shadow-paper-*,不跟英语版共用缓存
+// v24（2026-11-27）：公式渲染前剥掉 \label{}/\tag{}（KaTeX 不认，害得弹"未展开的宏"警告）
 // v23（2026-11-26）：修中英切换（前端不再自己拼 ?lang=zh，改由服务端 cookie 决定）
 // v22（2026-11-26）：中文版彻底收口 —— 题名/摘要中文化、目录中文化、列表项中文化。
 // v21（2026-11-26）：改了 reader.js / shelf.js（中文版切换），
 // 但浏览器里跑的还是老 service worker 缓存的旧 JS ——
 // **改了 web/ 下的资源就必须 bump 这个版本号**，否则老设备永远吃旧文件。
 // （仓里已有的约定，这里只是继续遵守。）
-const CACHE_NAME = 'shadow-paper-v23';
+const CACHE_NAME = 'shadow-paper-v24';
 
 // 本地静态资源。全部走 /static/ —— 后端只挂了这一条静态路由。
 const STATIC_ASSETS = [

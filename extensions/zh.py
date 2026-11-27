@@ -183,7 +183,8 @@ def _looks_untranslated(src: str, out: str) -> Optional[str]:
 
 
 def _call_llm(prompt: str, max_tokens: int = 3000, retries: int = 4,
-              context: str = "", title_mode: bool = False) -> Tuple[str, Optional[str]]:
+              context: str = "", title_mode: bool = False,
+              temperature: float = 0.2) -> Tuple[str, Optional[str]]:
     key = os.environ.get("MINIMAX_API_KEY")
     if not key:
         return "", "没设 MINIMAX_API_KEY"
@@ -198,7 +199,7 @@ def _call_llm(prompt: str, max_tokens: int = 3000, retries: int = 4,
         "model": MODEL,
         "messages": [{"role": "system", "content": sys_msg}, {"role": "user", "content": prompt}],
         "max_tokens": max_tokens,
-        "temperature": 0.2,
+        "temperature": temperature,
     }
     last = ""
     for attempt in range(retries):
@@ -208,7 +209,7 @@ def _call_llm(prompt: str, max_tokens: int = 3000, retries: int = 4,
                 data=json.dumps(body).encode("utf-8"),
                 headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
             )
-            with urllib.request.urlopen(req, timeout=180) as r:
+            with urllib.request.urlopen(req, timeout=90) as r:
                 data = json.loads(r.read().decode("utf-8"))
             choice = (data.get("choices") or [{}])[0]
             msg = choice.get("message") or {}
@@ -229,7 +230,12 @@ def _call_llm(prompt: str, max_tokens: int = 3000, retries: int = 4,
         except urllib.error.HTTPError as e:
             last = f"HTTP {e.code}"
             if e.code in (429, 500, 502, 503):
-                time.sleep(2.0 * (attempt + 1))
+                # ⚠️ 429 = **被限流**。退避要**指数增长**（2026-11-27 实测：
+                #   并发 6~10 时整批都在吃 429，而原来的 2/4/6 秒固定退避
+                #   根本等不到额度恢复 → 整批任务失败，标题/摘要全空）。
+                #   退避期间别的 worker 也会退，正好让额度喘口气。
+                wait = min(90.0, 6.0 * (2 ** attempt))
+                time.sleep(wait)
                 continue
         except Exception as e:  # noqa: BLE001
             last = repr(e)[:120]
@@ -245,7 +251,9 @@ def _nums(text: str) -> List[str]:
     return _NUM_RE.findall(re.sub(r"⟦MATH:.*?⟧⟧", " ", text or ""))
 
 
-def translate_text(text: str, context: str = "", kind: str = "text") -> Tuple[Optional[str], Optional[str], Dict[str, Any]]:
+def translate_text(text: str, context: str = "", kind: str = "text",
+                   temperature: float = 0.2,
+                   nudge: bool = False) -> Tuple[Optional[str], Optional[str], Dict[str, Any]]:
     """翻一段。返回 (译文, 错误, 校验信息)。
 
     校验：
@@ -259,8 +267,13 @@ def translate_text(text: str, context: str = "", kind: str = "text") -> Tuple[Op
     # ⚠️ 章节语境**必须放 system 消息**，不能和正文拼在 user 消息里
     #    （2026-11-26 实测踩中：拼在一起时模型把「（这一段所在的章节：总体结果）」
     #    也当成正文给翻了，章节标题里就多出这一行提示词）。
+    hint = ""
+    if nudge:
+        hint = ("\n\n（上一次你把原文原样返回了。这次必须译成中文，"
+                "专有名词保留英文、其余部分都要译。）")
     if kind == "title":
-        out, err = _call_llm(f"章节标题：{text}", context=context, title_mode=True)
+        out, err = _call_llm(f"章节标题：{text}{hint}", context=context, title_mode=True,
+                             temperature=temperature)
         # 模型有时把标题**原样返回**（"Qwen-3 Transcoders" → "Qwen-3 Transcoders"），
         # 原因多半是提示词里"方法名保留英文"这条被过度套用。
         # → 追加一句提醒再试一次，只认第二次的结果。
@@ -272,7 +285,7 @@ def translate_text(text: str, context: str = "", kind: str = "text") -> Tuple[Op
             if out2 and out2.strip() != text.strip():
                 out, err = out2, err2
     else:
-        out, err = _call_llm(text, context=context)
+        out, err = _call_llm(text + hint, context=context, temperature=temperature)
     if err or not out:
         return None, err or "空输出", {}
     out = out.strip()
@@ -341,6 +354,20 @@ def segments(doc: Dict[str, Any]) -> List[Tuple[tuple, str, str, str]]:
     return segs
 
 
+def en_fingerprint(doc: Dict[str, Any]) -> str:
+    """英文原文的指纹（段落的键拼起来取 sha1）。
+
+    用途：中文版里存一份这个指纹 → 下次重建前先比一下，
+    **没变就不用重译**（2026-11-27 实测：重建脚本每篇都从头跑，
+    已经翻好的又被翻一遍，纯浪费）。
+    """
+    import hashlib
+    h = hashlib.sha1()
+    for key, _kind, _text, _ctx in segments(doc):
+        h.update(repr(key).encode("utf-8"))
+    return h.hexdigest()
+
+
 def assemble(doc: Dict[str, Any], results: Dict[tuple, str],
              warns: Optional[List[Dict[str, Any]]] = None,
              missing: int = 0, n_segments: int = 0) -> Dict[str, Any]:
@@ -383,6 +410,7 @@ def assemble(doc: Dict[str, Any], results: Dict[tuple, str],
     for t in out.get("toc", []):
         if t.get("id") in by_id:
             t["title"] = by_id[t["id"]]
+    out["en_fingerprint"] = en_fingerprint(doc)
     out["translation_warnings"] = warns or []
     out["translation_blocks"] = n_segments
     out["translation_missing"] = missing
@@ -441,25 +469,39 @@ def translate_paper(pid: str, force: bool = False) -> Dict[str, Any]:
     warns: List[Dict[str, Any]] = []
     done = [0]
 
-    def work(item) -> None:
+    def work(item):
         key, (kind_tag, text, ctx) = item
+        started = time.time()
         for attempt in range(3):
-            zh, err, info = translate_text(text, ctx,
-                                           kind="title" if kind_tag in ("sec", "title") else "text")
-            if zh:
-                results[key] = zh
+            if time.time() - started > 150:
+                break
+            zh_t, err, info = translate_text(
+                text, ctx,
+                kind="title" if kind_tag in ("sec", "title") else "text",
+                # ⚠️ 重试要**换温度 + 加提示**：同一温度（0.2）下重试是
+                #    确定性重复 —— 三次返回一模一样，等于白重试（实测卡住整篇）。
+                temperature=[0.2, 0.7, 1.0][min(attempt, 2)],
+                nudge=(attempt > 0))
+            if zh_t:
                 if info.get("extra_numbers"):
                     warns.append({"text": text[:120], "extra_numbers": info["extra_numbers"]})
-                break
+                done[0] += 1
+                if done[0] % 25 == 0:
+                    print(f"    {done[0]}/{len(items)}", flush=True)
+                return zh_t
             time.sleep(1.0)
-        else:
-            results[key] = ""      # 译不出来就留空，别编
         done[0] += 1
-        if done[0] % 25 == 0:
-            print(f"    {done[0]}/{len(items)}", flush=True)
+        return ""      # 译不出来就留空，别编
 
-    with ThreadPoolExecutor(max_workers=CONCURRENCY) as ex:
-        list(ex.map(work, items))
+    got = _run_parallel(items, work)
+    # ⚠️ _run_parallel 返回的键是 **item**（= (key, (kind, text, ctx))），
+    #    不是 key 本身 —— 直接拿 item 当 key 写进 results，
+    #    **所有新翻的译文全都丢了**（复用的还在，所以只丢新翻的那部分，
+    #    症状是"目录全英文 / 标题全英文"，非常难查）。
+    for item, val in got.items():
+        key = item[0]
+        if val:
+            results[key] = val
 
     out = assemble(doc, results, warns,
                    missing=sum(1 for v in results.values() if not v),
@@ -508,6 +550,57 @@ def _old_translation_map(old_en: Dict[str, Any], old_zh: Dict[str, Any]) -> Dict
     return m
 
 
+def _run_parallel(items, fn, item_timeout: int = 240):
+    """并发跑 fn(item)，但**不让一个卡死的任务拖垮整批**。
+
+    为什么（2026-11-27 实测，2512 那批卡了 20 分钟）：
+      `with ThreadPoolExecutor(...) as ex: list(ex.map(work, todo))` 里，
+      某个 worker 卡住（连接半开、代理挂着）时，**ex.map 的迭代会永远等它** ——
+      前面已经翻好的上百段结果**全部拿不到**，整篇作废重跑。
+      改成：提交全部 → 逐个收 → **超时的直接取消** → 拿多少算多少，
+      缺的那几段交给质量体检补（`tools/fix_zh_quality.py`）。
+
+    返回 {item: 结果}；被取消/失败的 item 不在结果里。
+    """
+    from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+
+    out = {}
+    if not items:
+        return out
+    pending = {}
+    deadline = {}
+    import time as _time
+    now = _time.time()
+    with ThreadPoolExecutor(max_workers=CONCURRENCY) as ex:
+        for it in items:
+            f = ex.submit(fn, it)
+            pending[f] = it
+            deadline[f] = now + item_timeout
+        while pending:
+            done, pending_set = wait(list(pending), timeout=5,
+                                     return_when=FIRST_COMPLETED)
+            if not done:
+                # 检查有没有超时的
+                t = _time.time()
+                overdue = [f for f in pending if t > deadline[f]]
+                if not overdue:
+                    continue
+                for f in overdue:
+                    f.cancel()
+                    pending.pop(f, None)
+                continue
+            for f in done:
+                it = pending.pop(f, None)
+                if it is None:
+                    continue
+                try:
+                    out[it] = f.result()
+                except Exception:  # noqa: BLE001
+                    out[it] = None
+            pending = pending
+    return out
+
+
 def rebuild_paper(pid: str, old_en: Dict[str, Any], old_zh: Dict[str, Any],
                   force: bool = False) -> Dict[str, Any]:
     """重建中文版：英文原文**变了哪段就重译哪段**，没变的复用旧译文。
@@ -541,26 +634,42 @@ def rebuild_paper(pid: str, old_en: Dict[str, Any], old_zh: Dict[str, Any],
     warns: List[Dict[str, Any]] = []
     done = [0]
 
-    def work(item) -> None:
+    def work(item):
         key, (kind_tag, text, ctx) = item
+        started = time.time()
         for _attempt in range(3):
-            zh, err, info = translate_text(text, ctx,
-                                           kind="title" if kind_tag in ("sec", "title") else "text")
-            if zh:
-                results[key] = zh
+            # ⚠️ 重试会放大：_call_llm 自己重试 4 次，外层再重试 3 次 →
+            #    最坏 12 次调用 × 180s = 半小时卡住一整篇。
+            #    所以外层再加一道**总时长上限**：超了就放弃这一段，交给质量体检补。
+            if time.time() - started > 150:
+                break
+            zh_t, err, info = translate_text(
+                text, ctx,
+                kind="title" if kind_tag in ("sec", "title") else "text",
+                # ⚠️ 重试要**换温度 + 加提示**：同一温度（0.2）下重试是
+                #    确定性重复 —— 三次返回一模一样，等于白重试（实测卡住整篇）。
+                temperature=[0.2, 0.7, 1.0][min(attempt, 2)],
+                nudge=(attempt > 0))
+            if zh_t:
                 if info.get("extra_numbers"):
                     warns.append({"text": text[:120], "extra_numbers": info["extra_numbers"]})
-                break
+                done[0] += 1
+                if done[0] % 25 == 0:
+                    print(f"    {done[0]}/{len(todo)}", flush=True)
+                return zh_t
             time.sleep(1.0)
-        else:
-            results[key] = ""
         done[0] += 1
-        if done[0] % 25 == 0:
-            print(f"    {done[0]}/{len(todo)}", flush=True)
+        return ""
 
     if todo:
-        with ThreadPoolExecutor(max_workers=CONCURRENCY) as ex:
-            list(ex.map(work, todo))
+        got = _run_parallel(todo, work)
+        for item, val in got.items():      # item = (key, (kind, text, ctx))
+            key = item[0]
+            if val:
+                results[key] = val
+        stuck = len(todo) - len([v for v in got.values() if v])
+        if stuck:
+            print(f"    ⚠ {stuck} 段超时/失败，留给质量体检补", flush=True)
 
     out = assemble(new_en, results, warns,
                    missing=sum(1 for v in results.values() if not v),

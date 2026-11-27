@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from extensions import db, zh  # noqa: E402
 
 ALL_PIDS = ["2412.06769", "2506.09985", "2512.21711",
-            "2603.09184", "2604.12493", "2608.13570"]
+            "2603.09184", "2604.12493", "2608.13570", "2611.32606"]
 
 # 专有名词被意译的典型样本（正则）：方法名原样保留是硬要求
 _BAD_TITLE_RE = re.compile(r"椰子|闭环语义|闭合推断|词元嵌入器")
@@ -200,9 +200,12 @@ def main():
 
         def work(item):
             path, e, _c, kind, ctx, _why = item
-            for _ in range(3):
+            for attempt in range(3):
+                # 重试要换温度 + 加提示（同一温度下重试是确定性重复，等于白等）
                 out, err, _info = zh.translate_text(
-                    e, ctx, kind="title" if kind == "title" else "text")
+                    e, ctx, kind="title" if kind == "title" else "text",
+                    temperature=[0.2, 0.7, 1.0][min(attempt, 2)],
+                    nudge=(attempt > 0))
                 if out:
                     results[path] = out
                     return

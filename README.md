@@ -461,5 +461,20 @@ from extensions import library; library.build_index(force=True)"
 .venv/bin/python tools/fix_zh_quality.py --fix    # 体检 + 只重译脏的
 ```
 
-其他工具：`tools/reimport_all.py`（重导全部并报告内容变化）、
-`tools/rebuild_zh.py`（重建中文版）、`tools/probe_llm_raw.py`（看模型原始返回）。
+其他工具：
+
+| 工具 | 干什么 |
+|---|---|
+| `tools/reimport_all.py` | 重导全部论文并报告内容变化（节数/标题/块数） |
+| `tools/rebuild_zh.py` | 重建中文版（复用未变的译文，只重译真变了的） |
+| `tools/fix_zh_quality.py` | 中文版质量体检 + 只重译脏的 |
+| `tools/probe_llm_raw.py` | 看模型原始返回（排查思维链混入） |
+| `tools/debug_import.py` | **导入失败时查完整 pandoc 报错**（只取 stderr 第一行会看不到原因） |
+| `tools/diff_docs.py` | **导入前后逐段比对**，查「内容有没有悄悄少掉」 |
+
+⚠️ 改完清洗器**必须重导全部论文并逐段比对**：
+清洗器是全局的，只导新论文那篇不算数。而且**"没报错"不等于"没丢东西"** ——
+实测清洗器连着三次把正文整段吃掉（注释里的宏调用吃后文、`\DeclareTextFontCommand`
+重定义的宏吞掉实参、清理注释留下空行截断多行参数），全程不报任何错。
+判据用「每段找最佳匹配、相似度低的才算丢」——**不能用"前 N 字是否原样出现"**，
+因为修复本身会改段首（"Coconut" 找回来了），按前缀比会把「改好了」误判成「丢了」。

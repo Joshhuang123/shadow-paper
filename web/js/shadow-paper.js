@@ -329,6 +329,12 @@
      * 整条注脚删掉,留一个上标星号当标记。
      */
     function stripAnnotations(s) {
+        // ⚠️ \label{...} 也要剥（2026-11-27 实测，2611.32606）：
+        //   LaTeX 公式里的 \label{eq:xxx} 只是编号锚点，KaTeX 不认它 →
+        //   渲染兜底会把它当"原文里没展开的自定义宏"弹警告，
+        //   读者以为公式有问题（其实公式好好的）。
+        //   顺手也把 \tag{...} 剥掉（同理，只影响编号显示）。
+        s = s.replace(/\\label\s*\{[^{}]*\}/g, '').replace(/\\tag\s*\{[^{}]*\}/g, '');
         var re = /\\(footnote|thanks)\s*\{/;
         var out = '', i = 0;
         for (;;) {

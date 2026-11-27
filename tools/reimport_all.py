@@ -21,7 +21,7 @@ from extensions import arxiv_import, db, schema  # noqa: E402
 
 SNAP_DIR = Path.home() / "WorkBuddy" / "shadow-paper-snapshots"
 ALL_PIDS = ["2412.06769", "2506.09985", "2512.21711",
-            "2603.09184", "2604.12493", "2608.13570"]
+            "2603.09184", "2604.12493", "2608.13570", "2611.32606"]
 
 
 def latest_snapshot():
