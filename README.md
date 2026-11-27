@@ -312,6 +312,9 @@ shadow-ebook (~/shadow-learning)          Shadow Paper (~/shadow-paper)
 
 ### 给别的 agent 用（MCP）
 
+> 配置里要把 `<shadow-paper 仓库的绝对路径>` 换成你本机 clone 后的**绝对路径**
+> （MCP 配置不支持 `~`，也不认相对路径）。
+
 ```json
 {
   "mcpServers": {
