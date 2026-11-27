@@ -1,6 +1,6 @@
 """
 Owns: 查词 /api/dict/<word> —— 音标 + 中文释义,带 SQLite 缓存与多上游降级。
-Does NOT own: 生词本 (parent_data.py)、朗读 (tts.py)、前端展示。
+Does NOT own: 生词本 (vocab.py)、朗读 (tts.py)、前端展示。
 
 为什么要有这个模块(2026-09-30,用户报「点击查单词意思总是查询失败」):
     前端原来直接 fetch `https://api.dictionaryapi.dev/...` 拿英文释义,

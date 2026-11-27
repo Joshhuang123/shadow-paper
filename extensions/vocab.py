@@ -1,7 +1,7 @@
 """生词本 + 艾宾浩斯复习（SRS）。
 
 ⚠️ shadow-learning 里有**两套互不相通**的 SRS：
-    · 服务端 `parent_data.py`：状态机 learning→practicing→familiar→mastered，间隔 0/2/5/14 天，
+    · 服务端 `vocab.py`：状态机 learning→practicing→familiar→mastered，间隔 0/2/5/14 天，
       存 SQLite `vocab_reviews`，有到期索引
     · 前端 `index.js`：localStorage 里自己一套，间隔 1/3/7/14/30 天
   两套间隔不同、存储不同、而且**服务端的查词入口在前端根本没接上**（`/api/vocab/lookup` 无人调用）。

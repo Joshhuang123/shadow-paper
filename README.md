@@ -167,8 +167,8 @@ PDF ──► pdfplumber 逐行取（文本 + 字号 + 坐标） ──► 双�
 | 能力 | 来源 | 说明 |
 |---|---|---|
 | 查词 | `extensions/dictionary.py` | 有道 jsonapi 主源 + datamuse 兜底，SQLite 缓存 30 天/负缓存 1 天 |
-| SRS | `extensions/parent_data.py` 的 vocab 部分 | 状态机 learning→practicing→familiar→mastered，间隔 0/2/5/14 天 |
-| 句子切分 | `extensions/books.py` 的 `_split_sentences*` | 缩写/首字母/小数点/省略号保护，**一字未改** |
+| SRS | `extensions/vocab.py` | 状态机 learning→practicing→familiar→mastered，间隔 0/2/5/14 天 |
+| 句子切分 | `extensions/sentences.py` 的 `_split_sentences*` | 缩写/首字母/小数点/省略号保护，**一字未改** |
 | 连字还原 | `_normalize_ligatures` | PDF 文本里的 ﬁ/ﬂ/ﬃ 还原成普通字母 |
 | 前端壳 | `web/styles/*`、`a11y.js`、`theme.js`、`dispatcher.js` | 深浅色主题、ESC 关弹窗、点击路由 |
 
