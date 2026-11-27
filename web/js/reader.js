@@ -152,11 +152,17 @@
        ========================================================== */
 
     function loadPaper() {
-        var q = state.lang === 'zh' ? '?lang=zh' : '';
-        SP.getJSON('/api/paper/' + encodeURIComponent(state.pid) + q).then(function (d) {
+        // ⚠️ 这里**不能**自己拼 `?lang=zh`（2026-11-26 实测，用户报「点了切换回不到原文」）：
+        //   语言偏好存在服务端 cookie 里，但前端每次重载都把 state.lang 重置成 'zh'，
+        //   于是请求永远带 `?lang=zh` → 服务端 q_lang 优先、**cookie 被忽略** →
+        //   点「切换」写完 cookie、页面一刷新又强行拉中文，永远切不回原文。
+        // 现在：**不带参数**（让服务端按 cookie 决定，没 cookie 默认中文），
+        // 再用服务端返回的 lang 作为前端的真实状态。
+        SP.getJSON('/api/paper/' + encodeURIComponent(state.pid)).then(function (d) {
             state.paper = d.paper;
             state.hasZh = !!d.has_zh;
             state.paperLang = d.lang || 'en';
+            state.lang = state.paperLang;     // ← 以服务端返回为准
             renderHead(d.paper);
             renderToc(d.paper);
             renderBody(d.paper);
@@ -1083,8 +1089,12 @@
             if (!state.hasZh) { btn.hidden = true; continue; }
             btn.hidden = false;
             var lab = btn.querySelector('.sp-lang-label');
-            if (lab) lab.textContent = state.lang === 'zh' ? '中文' : '原文';
+            // ⚠️ 按钮上的字 = **点下去会得到什么**，不是「现在是什么」：
+            //   显示当前语言的话，正在读中文时按钮写着「中文」，
+            //   点一下却变成英文 —— 字和结果对不上，用户会以为按钮坏了。
+            if (lab) lab.textContent = state.lang === 'zh' ? '原文' : '中文';
             btn.setAttribute('aria-label', state.lang === 'zh' ? '切到英文原文' : '切到中文版');
+            btn.setAttribute('title', state.lang === 'zh' ? '切到英文原文' : '切到中文版');
         }
     }
 
