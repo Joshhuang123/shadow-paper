@@ -79,6 +79,27 @@ def pairs_of(en_doc, zh_doc):
                 "title", "论文标题"))
     out.append(("abstract_zh", en_doc.get("abstract") or "",
                 zh_doc.get("abstract_zh") or "", "text", "论文摘要"))
+    # ⚠️ 用**免费通道**（MyMemory）临时填过的，必须**重新用高质量模型翻一遍**：
+    #    MyMemory 是众包翻译，学术术语会错（"collectives" → "客服代表"）。
+    #    它们现在是中文、逃过了常规判据 → 靠 zh_fallback 名单捞回来
+    #    （中文值置空 → 判据判成"译文为空" → 强制重译）。
+    fb = {}
+    for path in zh_doc.get("zh_fallback") or []:
+        if path == "title_zh":
+            fb[path] = (path, en_doc.get("title") or "", "", "title", "论文标题")
+        elif path == "abstract_zh":
+            fb[path] = (path, en_doc.get("abstract") or "", "", "text", "论文摘要")
+        else:
+            m = re.match(r"sections\[(\d+)\]\.title", path)
+            if m and int(m.group(1)) < len(en_doc.get("sections") or []):
+                i = int(m.group(1))
+                fb[path] = (path, en_doc["sections"][i].get("title") or "", "",
+                            "title", "小节标题")
+    if fb:
+        merged = [fb.get(pair[0], pair) for pair in out]
+        known = {pair[0] for pair in out}
+        merged.extend(pair for path, pair in fb.items() if path not in known)
+        out = merged
     return out
 
 
@@ -91,6 +112,10 @@ def is_bad(en, cn, kind):
         return "思维链残留"
     if kind == "title" and _BAD_TITLE_RE.search(cn):
         return "专有名词被意译"
+    # ⚠️ 单个词的标题是**专有名词/基准名**（AdvBench、PlanBench、GPQA-Diamond…），
+    #    保留英文是对的 → 不判、不翻（翻了反而变成"对抗性基准"这种半吊子）。
+    if kind == "title" and len(cn.split()) == 1 and re.match(r"^[A-Za-z][A-Za-z0-9\-]*\.?$", cn.strip()):
+        return None
     # ⚠️ 标题单独判「原文原样」：
     #   通用判据要求原文 ≥40 字符才查「原文原句」，
     #   而标题大多只有 10–30 字符 → 判据全都不触发 → **未译的标题被放过**。
@@ -216,11 +241,14 @@ def main():
             list(ex.map(work, bad))
         toc_n += sync_toc(zh_doc)
         ok = 0
+        fallback = set(zh_doc.get("zh_fallback") or [])
         for path, e, _c, kind, ctx, _why in bad:
             out = results.get(path)
             if out:
                 set_by_path(zh_doc, path, out)
+                fallback.discard(path)     # 高质量译文到位 → 撤掉"待升级"标记
                 ok += 1
+        zh_doc["zh_fallback"] = sorted(fallback)
         toc_n += sync_toc(zh_doc)      # 改完标题再同步一次
         db.save_zh_paper(pid, zh_doc)
         (zh.CACHE_DIR / f"{pid}.json").write_text(
